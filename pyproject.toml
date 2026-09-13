@@ -1,0 +1,49 @@
+[project]
+name = "sport-tracker-mcp"
+version = "0.1.0"
+description = "Unofficial Sports Tracker MCP Server"
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.14"
+dependencies = [
+    "black>=26.5.1",
+    "dotenv>=0.9.9",
+    "fastmcp>=4.0.3",
+    "httpx>=0.28.1",
+    "isort>=9.0.1",
+    "mypy>=2.3.1",
+    "pydantic>=2.13.5",
+    "pytest>=9.1.1",
+]
+
+[project.scripts]
+sport-tracker = "sport_tracker_mcp.server:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+
+[dependency-groups]
+dev = [
+    "pytest-asyncio>=1.4.0",
+]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+
+[tool.pyrefly]
+search-path = ["src", "."]
+
+[tool.mypy]
+plugins = ["pydantic.mypy"]
+
+[tool.isort]
+profile = "black"
+line_length = 88
+
+[tool.black]
+line-length = 88
+target-version = ["py314"]
+
+
