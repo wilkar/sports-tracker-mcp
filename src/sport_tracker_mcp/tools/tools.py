@@ -85,13 +85,6 @@ async def get_social_feed(
 ) -> list[SocialFeedItem]:
     """Get social feed items from followed athletes or community."""
     raw_items = await client.get_social_feed(limit=limit)
-    if isinstance(raw_items, dict):
-        for k in ("feed", "items", "entries", "workouts"):
-            if k in raw_items and isinstance(raw_items[k], list):
-                raw_items = raw_items[k]
-                break
-        else:
-            raw_items = []
     return [
         SocialFeedItem.from_api(item, imperial=imperial)
         for item in raw_items

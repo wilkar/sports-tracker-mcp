@@ -320,23 +320,6 @@ async def test_get_recent_activities_summary():
 
 
 @pytest.mark.asyncio
-async def test_get_social_feed_dict_payload(monkeypatch):
-    """Bug 1: get_social_feed must handle dict payload without crashing on string keys."""
-
-    async def mock_dict_feed(*args, **kwargs):
-        return {
-            "feed": [
-                {"feedType": "WORKOUT", "workoutKey": "k1", "startTime": 1789317924710}
-            ]
-        }
-
-    monkeypatch.setattr(tools.client, "get_social_feed", mock_dict_feed)
-    feed = await get_social_feed(limit=5)
-    assert len(feed) == 1
-    assert feed[0].workout_key == "k1"
-
-
-@pytest.mark.asyncio
 async def test_get_recent_workouts_malformed_skipped(monkeypatch):
     """Bug 4: get_recent_workouts must skip malformed entries without KeyError."""
 

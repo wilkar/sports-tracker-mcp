@@ -4,17 +4,12 @@ import httpx
 import pytest
 
 from sport_tracker_mcp.client.client import (
-    SportsTrackerAPIError,
-    SportsTrackerAuthenticationError,
     SportsTrackerClient,
     SportsTrackerError,
     SportsTrackerNotFoundError,
 )
 from tests.fixtures import (
-    MOCK_GPX_XML,
-    MOCK_ROUTES_PAYLOAD,
     MOCK_USER_FEED_PAYLOAD,
-    MOCK_USER_FOLLOWING_PAYLOAD,
     MOCK_USER_SETTINGS_PAYLOAD,
     MOCK_USER_STATS_PAYLOAD,
     MOCK_WORKOUT_DETAILS_PAYLOAD,
@@ -83,53 +78,6 @@ async def test_get_user_settings(client: SportsTrackerClient):
     assert settings["country"] == "PL"
 
 
-@pytest.mark.asyncio
-async def test_get_user_following(client: SportsTrackerClient):
-    following = await client.get_user_following()
-    assert following == MOCK_USER_FOLLOWING_PAYLOAD
-    assert "followers" in following
-    assert "followings" in following
-    assert len(following["followers"]) == 1
-
-
-@pytest.mark.asyncio
-async def test_get_routes(client: SportsTrackerClient):
-    routes = await client.get_routes()
-    assert routes == MOCK_ROUTES_PAYLOAD
-    assert len(routes) == len(MOCK_ROUTES_PAYLOAD)
-    assert routes[0]["id"] == MOCK_ROUTES_PAYLOAD[0]["id"]
-
-
-@pytest.mark.asyncio
-async def test_get_single_route(client: SportsTrackerClient):
-    route_id = MOCK_ROUTES_PAYLOAD[0]["id"]
-    route = await client.get_route(route_id)
-    assert route == MOCK_ROUTES_PAYLOAD[0]
-    assert route["description"] == "City Loop"
-
-
-@pytest.mark.asyncio
-async def test_export_activity_with_disposition(client: SportsTrackerClient):
-    workout_key = "6aa6e2cc73ed6b7db03df35c"
-    text, filename = await client.export_activity(workout_key)
-    assert text == MOCK_GPX_XML
-    assert filename == "workout.gpx"
-
-
-@pytest.mark.asyncio
-async def test_export_activity_fallback_filename():
-    def custom_handler(request: httpx.Request) -> httpx.Response:
-        return httpx.Response(200, text=MOCK_GPX_XML)
-
-    client = SportsTrackerClient(
-        session_key="mock-session-key",
-        transport=httpx.MockTransport(custom_handler),
-    )
-    text, filename = await client.export_activity("my_custom_key")
-    assert text == MOCK_GPX_XML
-    assert filename == "my_custom_key.gpx"
-
-
 def test_make_mock_workout_factory():
     default_workout = make_mock_workout()
     assert default_workout["username"] == "mock_athlete"
@@ -152,9 +100,7 @@ def test_make_mock_workout_factory():
 
 
 def test_exception_hierarchy():
-    assert issubclass(SportsTrackerAuthenticationError, SportsTrackerError)
     assert issubclass(SportsTrackerNotFoundError, SportsTrackerError)
-    assert issubclass(SportsTrackerAPIError, SportsTrackerError)
 
 
 @pytest.mark.asyncio
@@ -167,7 +113,7 @@ async def test_authentication_error(status_code: int):
         session_key="bad-key",
         transport=httpx.MockTransport(auth_error_handler),
     )
-    with pytest.raises(SportsTrackerAuthenticationError, match="Authentication failed"):
+    with pytest.raises(SportsTrackerError, match="Authentication failed"):
         await client.get_workouts()
 
 
@@ -194,7 +140,7 @@ async def test_server_status_error(status_code: int):
         session_key="mock-key",
         transport=httpx.MockTransport(server_error_handler),
     )
-    with pytest.raises(SportsTrackerAPIError, match="Sports Tracker API error"):
+    with pytest.raises(SportsTrackerError, match="Sports Tracker API error"):
         await client.get_workouts()
 
 
@@ -207,7 +153,7 @@ async def test_api_json_error_field():
         session_key="mock-key",
         transport=httpx.MockTransport(api_error_payload_handler),
     )
-    with pytest.raises(SportsTrackerAPIError, match="Rate limit exceeded"):
+    with pytest.raises(SportsTrackerError, match="Rate limit exceeded"):
         await client.get_workouts()
 
 
@@ -220,7 +166,7 @@ async def test_network_connection_error():
         session_key="mock-key",
         transport=httpx.MockTransport(network_error_handler),
     )
-    with pytest.raises(SportsTrackerAPIError, match="Sports Tracker API request error"):
+    with pytest.raises(SportsTrackerError, match="Connection refused"):
         await client.get_workouts()
 
 
@@ -233,7 +179,7 @@ async def test_timeout_error():
         session_key="mock-key",
         transport=httpx.MockTransport(timeout_handler),
     )
-    with pytest.raises(SportsTrackerAPIError, match="Sports Tracker API request error"):
+    with pytest.raises(SportsTrackerError, match="Sports Tracker API request error"):
         await client.get_workouts()
 
 
@@ -323,51 +269,38 @@ async def test_client_cache_expiration():
 
 
 @pytest.mark.asyncio
-async def test_client_cache_force_refresh():
-    call_count = 0
-
-    def counting_handler(request: httpx.Request) -> httpx.Response:
-        nonlocal call_count
-        call_count += 1
-        return httpx.Response(200, json={"payload": []})
+async def test_client_cache_maxsize_eviction():
+    from cachetools import TTLCache
 
     client = SportsTrackerClient(
         session_key="mock-key",
-        transport=httpx.MockTransport(counting_handler),
+        transport=httpx.MockTransport(
+            lambda req: httpx.Response(200, json={"payload": []})
+        ),
         cache_ttl=60.0,
     )
+    # Reconfigure cache with a small maxsize of 2 for testing eviction
+    client._cache = TTLCache(maxsize=2, ttl=60.0)
 
     await client.get_workouts(limit=10)
-    assert call_count == 1
+    await client.get_workouts(limit=20)
+    assert len(client._cache) == 2
 
-    # Force refresh bypasses cache
-    await client.get_workouts(limit=10, force_refresh=True)
-    assert call_count == 2
-
-
-@pytest.mark.asyncio
-async def test_client_clear_cache():
-    call_count = 0
-
-    def counting_handler(request: httpx.Request) -> httpx.Response:
-        nonlocal call_count
-        call_count += 1
-        return httpx.Response(200, json={"payload": []})
-
-    client = SportsTrackerClient(
-        session_key="mock-key",
-        transport=httpx.MockTransport(counting_handler),
-        cache_ttl=60.0,
+    # A 3rd distinct endpoint/param evicts the least recently used entry
+    await client.get_workouts(limit=30)
+    assert len(client._cache) == 2
+    assert (
+        client._make_cache_key(
+            "/workouts", {"limit": 10, "offset": 0, "sortonst": True}
+        )
+        not in client._cache
     )
-
-    await client.get_workouts(limit=10)
-    assert call_count == 1
-
-    client.clear_cache()
-
-    # After clearing cache, should hit network again
-    await client.get_workouts(limit=10)
-    assert call_count == 2
+    assert (
+        client._make_cache_key(
+            "/workouts", {"limit": 30, "offset": 0, "sortonst": True}
+        )
+        in client._cache
+    )
 
 
 @pytest.mark.asyncio

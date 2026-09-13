@@ -1341,6 +1341,7 @@ version = "0.1.0"
 source = { editable = "." }
 dependencies = [
     { name = "black" },
+    { name = "cachetools" },
     { name = "dotenv" },
     { name = "fastmcp" },
     { name = "httpx" },
@@ -1358,6 +1359,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "black", specifier = ">=26.5.1" },
+    { name = "cachetools", specifier = ">=5.3.0" },
     { name = "dotenv", specifier = ">=0.9.9" },
     { name = "fastmcp", specifier = ">=4.0.3" },
     { name = "httpx", specifier = ">=0.28.1" },

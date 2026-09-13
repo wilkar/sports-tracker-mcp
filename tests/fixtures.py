@@ -15,20 +15,8 @@ def sports_tracker_mock_handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(200, json={"payload": MOCK_USER_FEED_PAYLOAD})
     elif "/workouts/" in path and path.endswith("/stats"):
         return httpx.Response(200, json={"payload": MOCK_USER_STATS_PAYLOAD})
-    elif path.endswith("/user/follow"):
-        return httpx.Response(200, json={"payload": MOCK_USER_FOLLOWING_PAYLOAD})
     elif path.endswith("/user"):
         return httpx.Response(200, json={"payload": MOCK_USER_SETTINGS_PAYLOAD})
-    elif path.endswith("/routes"):
-        return httpx.Response(200, json={"payload": MOCK_ROUTES_PAYLOAD})
-    elif "/routes/" in path:
-        return httpx.Response(200, json={"payload": MOCK_ROUTES_PAYLOAD[0]})
-    elif "/workout/exportGpx/" in path:
-        return httpx.Response(
-            200,
-            text=MOCK_GPX_XML,
-            headers={"content-disposition": 'attachment; filename="workout.gpx"'},
-        )
     return httpx.Response(404, json={"error": "Not Found"})
 
 
@@ -325,113 +313,6 @@ MOCK_USER_SETTINGS_PAYLOAD: dict[str, Any] = {
     "automaticallyApproveFollowers": False,
     "followModel": True,
 }
-
-
-# ============================================================================
-# 6. User Following (GET /user/follow)
-# ============================================================================
-MOCK_USER_FOLLOWING_PAYLOAD: dict[str, Any] = {
-    "followers": [
-        {
-            "username": "mock_follower_1",
-            "status": "FOLLOWING",
-            "realName": "Follower One",
-            "profileDescription": "",
-            "profileImageUrl": None,
-            "coverImageUrl": None,
-        }
-    ],
-    "followings": [
-        {
-            "username": "mock_follower_1",
-            "status": "FOLLOWING",
-            "realName": "Follower One",
-            "profileDescription": "",
-            "profileImageUrl": None,
-            "coverImageUrl": None,
-        }
-    ],
-    "blocked": [],
-    "blockedBy": [],
-}
-
-
-# ============================================================================
-# 7. Routes (GET /routes and GET /routes/{id})
-# ============================================================================
-MOCK_ROUTES_PAYLOAD: list[dict[str, Any]] = [
-    {
-        "id": "5ebef41b4a01021a667a04c4",
-        "username": "mock_athlete",
-        "description": "City Loop",
-        "activities": [1],
-        "totalDistance": 10502.4,
-        "averageSpeed": 2.5,
-        "visibility": "PRIVATE",
-        "startPoint": {"x": 0.0, "y": 0.0},
-        "endPoint": {"x": 0.0, "y": 0.0},
-        "segments": [
-            {
-                "position": 0,
-                "start": {"x": 0.0, "y": 0.0},
-                "end": {"x": 0.01, "y": 0.01},
-                "polyline": "mock_route_segment_polyline",
-                "routePoints": [
-                    {"x": 0.0, "y": 0.0, "z": 240.0},
-                    {"x": 0.005, "y": 0.005, "z": 242.0},
-                    {"x": 0.01, "y": 0.01, "z": 245.0},
-                ],
-            }
-        ],
-    }
-]
-
-
-# ============================================================================
-# 8. GPX Export (GET /workout/exportGpx/{key})
-# ============================================================================
-MOCK_GPX_XML: str = """<?xml version="1.0" encoding="UTF-8" standalone="no"?>
-<gpx xmlns="http://www.topografix.com/GPX/1/1" 
-     xmlns:gpxtpx="http://www.garmin.com/xmlschemas/TrackPointExtension/v1" 
-     xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" 
-     creator="Sports Tracker" version="1.1" 
-     xsi:schemaLocation="http://www.topografix.com/GPX/1/1 http://www.topografix.com/GPX/1/1/gpx.xsd">
-  <metadata>
-    <name>Morning Activity</name>
-    <author>
-      <name>Mock Athlete</name>
-    </author>
-  </metadata>
-  <trk>
-    <name>Commute</name>
-    <trkseg>
-      <trkpt lat="50.0000" lon="20.0000">
-        <time>2026-09-13T10:28:55Z</time>
-        <extensions>
-          <gpxtpx:TrackPointExtension>
-            <gpxtpx:hr>116</gpxtpx:hr>
-          </gpxtpx:TrackPointExtension>
-        </extensions>
-      </trkpt>
-      <trkpt lat="50.0001" lon="20.0002">
-        <time>2026-09-13T10:28:56Z</time>
-        <extensions>
-          <gpxtpx:TrackPointExtension>
-            <gpxtpx:hr>122</gpxtpx:hr>
-          </gpxtpx:TrackPointExtension>
-        </extensions>
-      </trkpt>
-      <trkpt lat="50.0003" lon="20.0005">
-        <time>2026-09-13T10:28:57Z</time>
-        <extensions>
-          <gpxtpx:TrackPointExtension>
-            <gpxtpx:hr>130</gpxtpx:hr>
-          </gpxtpx:TrackPointExtension>
-        </extensions>
-      </trkpt>
-    </trkseg>
-  </trk>
-</gpx>"""
 
 
 # ============================================================================

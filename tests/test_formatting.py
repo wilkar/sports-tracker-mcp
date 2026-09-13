@@ -9,7 +9,6 @@ from sport_tracker_mcp.formatting import (
     within_window,
 )
 from tests.fixtures import (
-    MOCK_ROUTES_PAYLOAD,
     MOCK_WORKOUT_DETAILS_PAYLOAD,
     MOCK_WORKOUTS_PAYLOAD,
     make_mock_workout,
@@ -54,8 +53,8 @@ def test_format_distance_zero_and_empty():
 
 
 def test_format_distance_thresholds_from_routes_and_factory():
-    # Route: 10502.4 meters (10.5 km -> <= 100 km threshold: 2 decimals)
-    route_dist = MOCK_ROUTES_PAYLOAD[0]["totalDistance"]
+    # Long distance: 10502.4 meters (10.5 km -> <= 100 km threshold: 2 decimals)
+    route_dist = 10502.4
     val, formatted = format_distance(route_dist)
     assert val == 10.5
     assert formatted == "10.50 km"
@@ -107,8 +106,8 @@ def test_format_speed_from_mock_workouts():
 
 
 def test_format_speed_from_routes_and_factory():
-    # Route: averageSpeed = 2.5 m/s (2.5 * 3.6 = 9.0 km/h)
-    route_speed = MOCK_ROUTES_PAYLOAD[0]["averageSpeed"]
+    # Speed: 2.5 m/s (2.5 * 3.6 = 9.0 km/h)
+    route_speed = 2.5
     speed_kmh, formatted_kmh = format_speed(route_speed, imperial=False)
     assert speed_kmh == 9.0
     assert formatted_kmh == "9.0 km/h"
@@ -150,8 +149,8 @@ def test_format_pace_from_factory():
     pace_km = format_pace(mock_wo["avgSpeed"], imperial=False)
     assert pace_km == "5:59"
 
-    # Route: avgSpeed = 2.5 m/s (9.0 km/h -> 60/9 = 6.666 -> 6:40 min/km)
-    route_pace = format_pace(MOCK_ROUTES_PAYLOAD[0]["averageSpeed"])
+    # Speed: 2.5 m/s (9.0 km/h -> 60/9 = 6.666 -> 6:40 min/km)
+    route_pace = format_pace(2.5)
     assert route_pace == "6:40"
 
 

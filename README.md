@@ -6,16 +6,16 @@
 > [!IMPORTANT]
 > **Unofficial Project**: This project is an independent, open-source Model Context Protocol (MCP) server. It is **not affiliated with, endorsed by, sponsored by, or associated with Sports Tracking Technologies Ltd, Amer Sports, Suunto**, or any of their affiliates or subsidiaries. All registered trademarks, product names, and company logos are the property of their respective owners.
 
-An unofficial [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) server for **Sports Tracker**, enabling AI assistants (such as Claude Desktop, Cursor, and Antigravity) to query your workouts, activity history, training load, VO2Max trends, recovery metrics, and social feed.
+An unofficial [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) server for **Sports Tracker**, enabling AI assistants (such as Claude Desktop, Cursor, and Antigravity) to query workouts, activity history, training load, VO2Max progression, recovery metrics, and social feeds.
 
 ---
 
 ## ⚡ Features
 
-- **8 FastMCP Tools**: Complete fitness tracking integration covering workouts, social feed, user statistics, training load, VO2Max progression, and activity breakdowns.
+- **8 FastMCP Tools**: Complete fitness tracking integration covering workouts, social feed, user statistics, training load, VO2Max trends, and activity breakdowns.
 - **Structured Pydantic Models**: Clean schemas with human-readable paces, formatted durations, and units.
 - **Dual Unit Support**: Effortlessly toggle between metric (km, km/h, min/km) and imperial (miles, mph, min/mi) across queries.
-- **In-Memory TTL Caching**: Built-in 60-second caching for API requests to minimize load on Sports Tracker servers.
+- **LRU Bounded TTL Caching**: In-memory caching via `cachetools.TTLCache` (max 256 items, 60-second TTL) preventing redundant API requests and memory leaks.
 - **Resilient Pagination**: Multi-day summary tools dynamically paginate backwards through workout history without premature truncation.
 
 ---
@@ -78,8 +78,8 @@ STT_SESSION_KEY=your_session_key_here
 Clone the repository and install dependencies:
 
 ```bash
-git clone https://github.com/wiliwis/mcp-demo-server.git
-cd mcp-demo-server
+git clone https://github.com/wilkar/sports-tracker-mcp.git
+cd sports-tracker-mcp
 uv sync
 ```
 
@@ -88,11 +88,25 @@ uv sync
 You can start the server directly using `stdio` transport:
 
 ```bash
-# Using uv
+# Using uv:
 uv run sport-tracker
 
-# Or directly with Python
+# Or directly with Python:
 python main.py
+```
+
+### Testing with MCP Inspector
+
+You can inspect all tools interactively in your browser using FastMCP's inspector:
+
+```bash
+uv run fastmcp dev inspector src/sport_tracker_mcp/server.py
+```
+
+Or list tools and schemas directly from the CLI:
+
+```bash
+uv run fastmcp list src/sport_tracker_mcp/server.py
 ```
 
 ---
@@ -101,26 +115,26 @@ python main.py
 
 ### Claude Desktop
 
-Add the following to your `claude_desktop_config.json` (located at `~/Library/Application Support/Claude/claude_desktop_config.json` on macOS or `%APPDATA%\Claude\claude_desktop_config.json` on Windows):
+Add the server to your `claude_desktop_config.json`:
+- **macOS**: `~/Library/Application Support/Claude/claude_desktop_config.json`
+- **Windows**: `%APPDATA%\Claude\claude_desktop_config.json`
 
 ```json
 {
   "mcpServers": {
     "sports-tracker": {
-      "command": "uv",
-      "args": [
-        "--directory",
-        "/path/to/mcp-demo-server",
-        "run",
-        "sport-tracker"
-      ],
+      "command": "/path/to/sports-tracker-mcp/.venv/bin/sport-tracker",
       "env": {
-        "STT_SESSION_KEY": "your_session_key_here"
+
       }
     }
   }
 }
 ```
+
+> [!TIP]
+> **macOS GUI Apps**: Using the absolute path to your virtual environment's `.venv/bin/sport-tracker` binary avoids `$PATH` resolution issues in macOS desktop applications. If `STT_SESSION_KEY` is already set in your `.env` file, the `"env"` block can also be omitted.
+
 
 ### Antigravity / Cursor
 
@@ -130,15 +144,26 @@ In your workspace or global MCP settings (`mcp_config.json`):
 {
   "mcpServers": {
     "sports-tracker": {
-      "command": "python",
-      "args": ["/path/to/mcp-demo-server/main.py"],
+      "command": "/path/to/sports-tracker-mcp/.venv/bin/python",
+      "args": ["/path/to/sports-tracker-mcp/main.py"],
       "env": {
-        "STT_SESSION_KEY": "your_session_key_here"
       }
     }
   }
 }
 ```
+
+---
+
+## 🗺️ Roadmap & Planned Tools (TODO)
+
+The following tools are planned for future releases to expand Sports Tracker capabilities:
+- [ ] **`get_routes`**: List saved and recorded GPS routes with distances, speeds, and activity types.
+- [ ] **`get_route_details`**: In-depth GPS track waypoints, elevation profiles, and polyline coordinates for a specific route.
+- [ ] **`export_workout_gpx`**: Download standardized GPX XML track files for activities.
+- [ ] **`get_user_following`**: Retrieve followers and followed athlete profiles from Sports Tracker.
+
+See [TODO.md](TODO.md) for full endpoint specifications.
 
 ---
 

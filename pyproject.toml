@@ -7,6 +7,7 @@ license = "MIT"
 requires-python = ">=3.14"
 dependencies = [
     "black>=26.5.1",
+    "cachetools>=5.3.0",
     "dotenv>=0.9.9",
     "fastmcp>=4.0.3",
     "httpx>=0.28.1",
