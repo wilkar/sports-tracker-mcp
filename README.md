@@ -2,6 +2,9 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Python 3.14+](https://img.shields.io/badge/python-3.14+-blue.svg)](https://www.python.org/downloads/)
+[![FastMCP](https://img.shields.io/badge/FastMCP-4.0+-brightgreen.svg)](https://github.com/jlowin/fastmcp)
+[![Code style: black](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)
+[![Type Checked: mypy](https://img.shields.io/badge/mypy-checked-blue.svg)](http://mypy-lang.org/)
 
 > [!IMPORTANT]
 > **Unofficial Project**: This project is an independent, open-source Model Context Protocol (MCP) server. It is **not affiliated with, endorsed by, sponsored by, or associated with Sports Tracking Technologies Ltd, Amer Sports, Suunto**, or any of their affiliates or subsidiaries. All registered trademarks, product names, and company logos are the property of their respective owners.
@@ -32,6 +35,18 @@ An unofficial [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) s
 | `get_training_summary` | Aggregated volume, distance, time, and calories across all sports for the past *N* days. | `days` (default: 7), `imperial` (default: false) |
 | `get_training_load_and_recovery` | Current recovery hours, training stress score (TSS), peak training effect (PTE), EPOC, and recovery status. | *None* |
 | `get_recent_activities_summary` | Breakdown of sport frequency, total duration, and last performed dates over the past *N* days. | `days` (default: 14) |
+
+---
+
+## 💬 Example Assistant Prompts
+
+Once integrated, your AI assistant can answer natural language queries directly:
+
+- **Weekly Training Volume**: *"How much running and cycling have I logged over the past 14 days? Break it down by distance, time, and pace."*
+- **Workout Deep Dive**: *"Give me a detailed breakdown of my latest workout, including heart rate zones, cadence, elevation gain, and Suunto metrics in imperial units."*
+- **Recovery & Readiness**: *"What is my current recovery time, TSS, and EPOC from my recent activities? Am I ready for a tempo run today?"*
+- **Fitness Trends**: *"Plot my aerobic capacity (VO2Max) and fitness age progression over my last 20 workouts."*
+- **Interactive Dashboards**: *"Analyze my training load and render an interactive React dashboard with weekly volume charts and HR zone distribution."*
 
 ---
 
@@ -97,13 +112,13 @@ python main.py
 
 ### Testing with MCP Inspector
 
-You can inspect all tools interactively in your browser using FastMCP's inspector:
+Inspect all tools interactively in your browser using FastMCP's inspector:
 
 ```bash
 uv run fastmcp dev inspector src/sport_tracker_mcp/server.py
 ```
 
-Or list tools and schemas directly from the CLI:
+Or inspect tool schemas directly from the CLI:
 
 ```bash
 uv run fastmcp list src/sport_tracker_mcp/server.py
@@ -125,16 +140,11 @@ Add the server to your `claude_desktop_config.json`:
     "sports-tracker": {
       "command": "/path/to/sports-tracker-mcp/.venv/bin/sport-tracker",
       "env": {
-
       }
     }
   }
 }
 ```
-
-> [!TIP]
-> **macOS GUI Apps**: Using the absolute path to your virtual environment's `.venv/bin/sport-tracker` binary avoids `$PATH` resolution issues in macOS desktop applications. If `STT_SESSION_KEY` is already set in your `.env` file, the `"env"` block can also be omitted.
-
 
 ### Antigravity / Cursor
 
@@ -144,13 +154,34 @@ In your workspace or global MCP settings (`mcp_config.json`):
 {
   "mcpServers": {
     "sports-tracker": {
-      "command": "/path/to/sports-tracker-mcp/.venv/bin/python",
-      "args": ["/path/to/sports-tracker-mcp/main.py"],
+      "command": "/path/to/sports-tracker-mcp/.venv/bin/sport-tracker",
       "env": {
+
       }
     }
   }
 }
+```
+
+---
+
+## 📂 Project Structure
+
+```text
+sports-tracker-mcp/
+├── src/
+│   └── sport_tracker_mcp/
+│       ├── client/         # Async HTTP client with LRU TTLCache & error handling
+│       ├── formatting/     # Unit conversions (metric/imperial), pace, and duration utils
+│       ├── models/         # Pydantic schemas for workouts, stats, load & recovery
+│       ├── tools/          # 8 FastMCP tool implementations
+│       ├── config.py       # Environment variable resolution & .env loader
+│       └── server.py       # FastMCP server definition & CLI entrypoint
+├── tests/                  # Test suite (65 tests across client, models, tools, and formatting)
+├── .env.example            # Sample environment file
+├── pyproject.toml          # Project metadata, dependencies, and tool configs
+├── TODO.md                 # Roadmap and endpoint specs for upcoming tools
+└── README.md
 ```
 
 ---
