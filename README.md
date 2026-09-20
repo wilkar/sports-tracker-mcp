@@ -43,11 +43,7 @@ claude mcp add sports-tracker -e STT_SESSION_KEY=your_session_key_here \
   "mcpServers": {
     "sports-tracker": {
       "command": "uvx",
-      "args": [
-        "--from",
-        "git+https://github.com/wilkar/sports-tracker-mcp",
-        "sport-tracker-mcp"
-      ],
+      "args": ["--from", "/path/to/the/repo", "sport-tracker-mcp"],
       "env": {
         "STT_SESSION_KEY": "your_session_key_here"
       }

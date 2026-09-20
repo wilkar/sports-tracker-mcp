@@ -1,10 +1,12 @@
+import tempfile
+from pathlib import Path
 from typing import Any
 
 from fastmcp import FastMCP
 from fastmcp.apps import AppConfig
 from fastmcp.tools import ToolResult
 from fastmcp.utilities.mime import UI_MIME_TYPE
-from mcp.types import EmbeddedResource, TextContent, TextResourceContents
+from mcp.types import TextContent
 
 # Absolute, not relative: `fastmcp list/dev <file>` loads this module by path,
 # outside its package, where a relative import has no parent to resolve against.
@@ -19,20 +21,39 @@ mcp = FastMCP(
 )
 
 
+# Last card rendered per tool, for tests and debugging. The widget gets its
+# copy from the tool result's _meta, not from here.
+# ponytail: process-global, last-write-wins; fine for one stdio client per process.
+_latest_card: dict[str, str] = {}
+
+
+CARD_DIR = Path(tempfile.gettempdir()) / "sport-tracker-cards"
+
+
 def _card(tool: str, markup: str, data: Any) -> ToolResult:
-    """Structured data for the model, plus interactive UI card for MCP Apps."""
+    """Structured data for the model; the rendered card for the widget.
+
+    Three consumers, three channels:
+
+    * `structured_content` — the model reasons over this.
+    * `_meta["sport-tracker/card"]` — the MCP Apps widget. The host fetches the
+      ui:// shell BEFORE the tool runs, so the card cannot live in the resource;
+      it rides on the tool result and the shell injects it on arrival.
+    * a file on disk — for hosts with no widget support at all, linked from the
+      one line of text the model sees.
+
+    The markup never goes in `content`: a host without MCP Apps flattens that
+    into the model's context, costing ~8x the structured payload to render
+    nothing.
+    """
+    _latest_card[tool] = markup
+    CARD_DIR.mkdir(parents=True, exist_ok=True)
+    path = CARD_DIR / f"{tool}.html"
+    path.write_text(markup, encoding="utf-8")
     return ToolResult(
-        content=[
-            EmbeddedResource(
-                type="resource",
-                resource=TextResourceContents(
-                    uri=f"ui://sport-tracker/{tool}",
-                    mime_type=UI_MIME_TYPE,
-                    text=markup,
-                ),
-            ),
-        ],
+        content=[TextContent(type="text", text=f"Interactive card: file://{path}")],
         structured_content=data,
+        meta={ui.CARD_META_KEY: markup},
     )
 
 
@@ -149,10 +170,20 @@ UI_TOOLS = (
 
 for _tool in UI_TOOLS:
     _name = _tool.__name__
-    mcp.tool(
-        _tool,
-        name=_name,
-        app=AppConfig(resource_uri=f"ui://sport-tracker/{_name}"),
+    _uri = f"ui://sport-tracker/{_name}"
+    # Only FastMCP's own _meta["ui"] key. Adding the namespaced
+    # `io.modelcontextprotocol/ui` alongside it stopped Claude Desktop from
+    # fetching the resource at all — that id belongs to protocol 2026-07-28,
+    # which this handshake (2025-11-25) does not negotiate.
+    mcp.tool(_tool, name=_name, app=AppConfig(resource_uri=_uri))
+    # One concrete resource per tool, not a `{tool}` template: templates are
+    # served from resources/templates/list, which Claude Desktop does not call —
+    # it lists resources/list and reads the URI declared in the tool's meta.
+    # A static shell, never the card itself: the host fetches this ~2ms BEFORE
+    # it calls the tool, so at fetch time there is no data. The shell waits for
+    # the tool result on the AppBridge and injects the markup from its _meta.
+    mcp.resource(_uri, name=f"{_name} card", mime_type=UI_MIME_TYPE)(
+        (lambda n: lambda: ui.shell(n))(_name)
     )
 
 # Data-only tool (no UI card)

@@ -4,7 +4,8 @@ import pytest
 from fastmcp.utilities.mime import UI_MIME_TYPE
 from mcp.types import EmbeddedResource, TextContent
 
-from sport_tracker_mcp.server import _card, mcp
+from sport_tracker_mcp import ui
+from sport_tracker_mcp.server import CARD_DIR, _card, _latest_card, mcp
 from tests.fixtures import MOCK_WORKOUTS_PAYLOAD
 
 
@@ -52,16 +53,33 @@ async def test_server_tools_registered():
     assert social_tool.meta is None or "ui" not in (social_tool.meta or {})
 
 
-def test_card_returns_app_resource():
+def test_card_routes_markup_to_meta_not_content():
+    """Three consumers, three channels — and the model never sees markup."""
     result = _card("test_tool", "<h1>Test Card</h1>", {"status": "ok"})
-    assert result.structured_content == {"status": "ok"}
-    assert len(result.content) == 1
 
-    mcp_app_res = result.content[0]
-    assert isinstance(mcp_app_res, EmbeddedResource)
-    assert mcp_app_res.resource.uri == "ui://sport-tracker/test_tool"
-    assert mcp_app_res.resource.mime_type == UI_MIME_TYPE
-    assert mcp_app_res.resource.text == "<h1>Test Card</h1>"
+    # model: structured data plus a one-line pointer, never the markup
+    assert result.structured_content == {"status": "ok"}
+    text = "".join(getattr(b, "text", "") for b in result.content)
+    assert "<h1>Test Card</h1>" not in text
+    assert text.startswith("Interactive card: file://")
+
+    # widget: the card rides on _meta, which is where the shell reads it
+    assert result.meta[ui.CARD_META_KEY] == "<h1>Test Card</h1>"
+
+    # browser fallback: same markup on disk
+    assert (CARD_DIR / "test_tool.html").read_text() == "<h1>Test Card</h1>"
+
+
+def test_shell_is_static_and_carries_no_data():
+    """The host fetches the shell BEFORE the tool runs, so it must hold no data.
+
+    This is the bug that made cards render as a placeholder: a resource that
+    tried to serve the last rendered card had nothing to serve on first call.
+    """
+    shell = ui.shell("get_recent_workouts")
+    assert "ontoolresult" in shell  # waits for the host to push the result
+    assert ui.CARD_META_KEY in shell  # reads the card out of the result's _meta
+    assert "<tr" not in shell  # no rows: no data is baked in
 
 
 @pytest.mark.asyncio

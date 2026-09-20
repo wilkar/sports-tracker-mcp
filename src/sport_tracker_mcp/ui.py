@@ -842,3 +842,63 @@ def render_recent_activities_summary(summary: RecentActivitiesSummary) -> str:
         f"<tbody>{rows}</tbody></table></div>"
     )
     return _doc("Recent activities", body)
+
+
+# --- MCP Apps shell ---------------------------------------------------------
+
+# The host fetches this resource BEFORE the tool runs, so it cannot contain the
+# card: at fetch time there is no data yet. It is a static shell that waits for
+# the host to push the tool result over the AppBridge, then injects the markup
+# the server rendered into it. That keeps every renderer above in Python.
+CARD_META_KEY = "sport-tracker/card"
+
+_APP_SRC = (
+    "https://cdn.jsdelivr.net/npm/@modelcontextprotocol/ext-apps@2.0.0"
+    "/dist/src/app-with-deps.js"
+)
+
+_SHELL = """<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>%(title)s</title>
+<style>%(css)s
+#stt-wait{padding:16px;font:12px 'JetBrains Mono',ui-monospace,monospace;color:%(ink3)s}
+</style>
+</head>
+<body>
+<div class="wrap" id="stt-root"><div id="stt-wait">loading %(title)s&hellip;</div></div>
+<script type="module">
+import { App } from "%(app_src)s";
+const root = document.getElementById("stt-root");
+function paint(result){
+  const markup = result && result._meta && result._meta["%(meta_key)s"];
+  if (!markup) return;
+  // The server-rendered card is a whole document; take just its .wrap contents.
+  const doc = new DOMParser().parseFromString(markup, "text/html");
+  const wrap = doc.querySelector(".wrap");
+  root.innerHTML = wrap ? wrap.innerHTML : doc.body.innerHTML;
+  for (const old of root.querySelectorAll("script")) {
+    const s = document.createElement("script");
+    s.textContent = old.textContent;
+    old.replaceWith(s);
+  }
+}
+const app = new App({ name: "sport-tracker", version: "1.0.0" });
+app.ontoolresult = paint;
+app.connect().catch(e => { root.textContent = "card bridge failed: " + e.message; });
+</script>
+</body>
+</html>"""
+
+
+def shell(title: str) -> str:
+    """Static app shell for one tool's card; data arrives over the AppBridge."""
+    return _SHELL % {
+        "title": _e(title),
+        "css": _CSS,
+        "ink3": THEME["ink3"],
+        "app_src": _APP_SRC,
+        "meta_key": CARD_META_KEY,
+    }
