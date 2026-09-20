@@ -227,8 +227,27 @@ MOCK_WORKOUT_DETAILS_PAYLOAD: dict[str, Any] = {
             "type": "AltitudeStreamExtension",
             "points": [
                 {"value": 204.6, "timestamp": 1789204574340},
-                {"value": 206.0, "timestamp": 1789204575340},
-                {"value": 208.5, "timestamp": 1789204576340},
+                {"value": 206.0, "timestamp": 1789204800000},
+                {"value": 218.5, "timestamp": 1789205200000},
+                {"value": 212.0, "timestamp": 1789205919300},
+            ],
+        },
+        {
+            "type": "HeartrateStreamExtension",
+            "points": [
+                {"value": 105.0, "timestamp": 1789204574340},
+                {"value": 128.0, "timestamp": 1789204800000},
+                {"value": 154.0, "timestamp": 1789205200000},
+                {"value": 142.0, "timestamp": 1789205919300},
+            ],
+        },
+        {
+            "type": "SpeedStreamExtension",
+            "points": [
+                {"value": 2.1, "timestamp": 1789204574340},
+                {"value": 3.4, "timestamp": 1789204800000},
+                {"value": 4.1, "timestamp": 1789205200000},
+                {"value": 2.0, "timestamp": 1789205919300},
             ],
         },
     ],
@@ -336,3 +355,8 @@ def make_mock_workout(**overrides: Any) -> dict[str, Any]:
         "description": "Afternoon Run",
     }
     return {**base, **overrides}
+
+
+# Reference "now" for window-based tests: 1h after the newest fixture workout.
+# Anchored to the data so day-window assertions never rot with the wall clock.
+MOCK_NOW_MS = max(w["startTime"] for w in MOCK_WORKOUTS_PAYLOAD) + 3_600_000

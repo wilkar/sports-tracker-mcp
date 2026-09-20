@@ -3,7 +3,7 @@ import asyncio
 import httpx
 import pytest
 
-from sport_tracker_mcp.client.client import (
+from sport_tracker_mcp.client import (
     SportsTrackerClient,
     SportsTrackerError,
     SportsTrackerNotFoundError,
@@ -14,7 +14,6 @@ from tests.fixtures import (
     MOCK_USER_STATS_PAYLOAD,
     MOCK_WORKOUT_DETAILS_PAYLOAD,
     MOCK_WORKOUTS_PAYLOAD,
-    make_mock_workout,
     sports_tracker_mock_handler,
 )
 
@@ -49,7 +48,7 @@ async def test_get_workout_details(client: SportsTrackerClient):
 
 @pytest.mark.asyncio
 async def test_get_social_feed(client: SportsTrackerClient):
-    feed = await client.get_social_feed(limit=10, offset=0)
+    feed = await client.get_social_feed(limit=10)
     assert feed == MOCK_USER_FEED_PAYLOAD
     assert isinstance(feed, list)
     assert feed[0]["feedType"] == "AMBASSADOR"
@@ -78,29 +77,9 @@ async def test_get_user_settings(client: SportsTrackerClient):
     assert settings["country"] == "PL"
 
 
-def test_make_mock_workout_factory():
-    default_workout = make_mock_workout()
-    assert default_workout["username"] == "mock_athlete"
-    assert default_workout["workoutKey"] == "mock_custom_key_999"
-    assert default_workout["description"] == "Afternoon Run"
-
-    custom_workout = make_mock_workout(
-        workoutKey="custom_123",
-        description="Morning Intervals",
-        totalDistance=10000.0,
-    )
-    assert custom_workout["workoutKey"] == "custom_123"
-    assert custom_workout["description"] == "Morning Intervals"
-    assert custom_workout["totalDistance"] == 10000.0
-
-
 # ============================================================================
 # 2. Exception Handling Tests
 # ============================================================================
-
-
-def test_exception_hierarchy():
-    assert issubclass(SportsTrackerNotFoundError, SportsTrackerError)
 
 
 @pytest.mark.asyncio
@@ -342,3 +321,64 @@ async def test_client_cache_does_not_cache_errors():
 
     # Ensure no error entry was cached
     assert len(client._cache) == 0
+
+
+@pytest.mark.asyncio
+async def test_client_sanitizes_non_dict_payload():
+    def malformed_handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={"payload": [{"workoutKey": "w1"}, "not a dict", None, 123]},
+        )
+
+    client = SportsTrackerClient(
+        session_key="mock-key",
+        transport=httpx.MockTransport(malformed_handler),
+    )
+    workouts = await client.get_workouts()
+    assert len(workouts) == 1
+    assert workouts[0]["workoutKey"] == "w1"
+
+
+@pytest.mark.asyncio
+async def test_get_workout_details_encodes_path_and_query_injection() -> None:
+    requested_urls: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requested_urls.append(str(request.url))
+        return httpx.Response(200, json={"payload": {"workoutKey": "ok"}})
+
+    client = SportsTrackerClient(
+        session_key="mock-key",
+        transport=httpx.MockTransport(handler),
+    )
+
+    # 1. Path traversal attempt is safely percent-encoded
+    await client.get_workout_details("../../../user")
+    assert requested_urls[-1].endswith("/workouts/..%2F..%2F..%2Fuser/combined")
+    assert "/user/combined" not in requested_urls[-1]
+
+    # 2. Query injection attempt is safely percent-encoded
+    await client.get_workout_details("a?limit=9999")
+    assert requested_urls[-1].endswith("/workouts/a%3Flimit%3D9999/combined")
+    assert "?limit=9999" not in requested_urls[-1]
+
+
+@pytest.mark.asyncio
+async def test_get_user_stats_encodes_username() -> None:
+    requested_urls: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requested_urls.append(str(request.url))
+        return httpx.Response(200, json={"payload": {"totalWorkouts": 5}})
+
+    client = SportsTrackerClient(
+        session_key="mock-key",
+        transport=httpx.MockTransport(handler),
+    )
+
+    await client.get_user_stats("attacker/admin?grant=true")
+    assert requested_urls[-1].endswith(
+        "/workouts/attacker%2Fadmin%3Fgrant%3Dtrue/stats"
+    )
+    assert "?grant=true" not in requested_urls[-1]

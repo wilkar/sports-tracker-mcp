@@ -1,21 +1,18 @@
 from typing import Any
+from urllib.parse import quote
 
 import httpx
 from cachetools import TTLCache
 
-from ..config import BASE_URL, SESSION_KEY
+from .config import BASE_URL, SESSION_KEY
 
 
 class SportsTrackerError(Exception):
     """Base class for SportsTracker exceptions."""
 
-    pass
-
 
 class SportsTrackerNotFoundError(SportsTrackerError):
     """Raised when a resource is not found."""
-
-    pass
 
 
 class SportsTrackerClient:
@@ -42,37 +39,38 @@ class SportsTrackerClient:
         param_str = "&".join(f"{k}={v}" for k, v in sorted(params.items()))
         return f"{endpoint}?{param_str}"
 
-    async def get_workouts(self, limit: int = 50, offset: int = 0) -> list[dict]:
+    async def get_workouts(
+        self, limit: int = 50, offset: int = 0
+    ) -> list[dict[str, Any]]:
         params = {"limit": limit, "offset": offset, "sortonst": True}
-        return await self._get("/workouts", params=params) or []
+        res = await self._get("/workouts", params=params)
+        return [w for w in res if isinstance(w, dict)] if isinstance(res, list) else []
 
-    async def get_workout_details(self, workout_key: str) -> dict:
-        return await self._get(f"/workouts/{workout_key}/combined") or {}
+    async def get_workout_details(self, workout_key: str) -> dict[str, Any]:
+        encoded_key = quote(workout_key, safe="")
+        res = await self._get(f"/workouts/{encoded_key}/combined")
+        return res if isinstance(res, dict) else {}
 
-    async def get_social_feed(self, limit: int = 10, offset: int = 0) -> list[dict]:
-        params = {"limit": limit, "offset": offset}
+    async def get_social_feed(self, limit: int = 10) -> list[dict[str, Any]]:
+        params = {"limit": limit}
         res = await self._get("/user/feed/combined", params=params)
-        if isinstance(res, list):
-            return res
-        if isinstance(res, dict):
-            for key in ("feed", "items", "entries", "workouts"):
-                if key in res and isinstance(res[key], list):
-                    return res[key]
-        return []
+        return (
+            [item for item in res if isinstance(item, dict)]
+            if isinstance(res, list)
+            else []
+        )
 
-    async def get_user_stats(self, username: str | None = None) -> dict:
+    async def get_user_stats(self, username: str | None = None) -> dict[str, Any]:
         if not username:
             user_info = await self.get_user_settings()
             username = user_info.get("username", "")
-        return await self._get(f"/workouts/{username}/stats") or {}
+        encoded_username = quote(username, safe="")
+        res = await self._get(f"/workouts/{encoded_username}/stats")
+        return res if isinstance(res, dict) else {}
 
-    async def get_user_settings(self) -> dict:
-        return await self._get("/user") or {}
-
-    def _create_httpx_session(self) -> httpx.AsyncClient:
-        return httpx.AsyncClient(
-            base_url=self.base_url, headers=self.headers, transport=self.transport
-        )
+    async def get_user_settings(self) -> dict[str, Any]:
+        res = await self._get("/user")
+        return res if isinstance(res, dict) else {}
 
     async def _get(
         self,
@@ -88,7 +86,9 @@ class SportsTrackerClient:
         if cache_key in self._cache:
             return self._cache[cache_key]
 
-        async with self._create_httpx_session() as client:
+        async with httpx.AsyncClient(
+            base_url=self.base_url, headers=self.headers, transport=self.transport
+        ) as client:
             try:
                 resp = await client.get(endpoint, params=params)
                 resp.raise_for_status()

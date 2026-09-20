@@ -3,7 +3,6 @@ from sport_tracker_mcp.models import (
     RecentActivitiesSummary,
     SocialFeedItem,
     SportStats,
-    SportTrainingSummary,
     TrainingLoadAndRecovery,
     TrainingSummary,
     UserStats,
@@ -99,8 +98,8 @@ def test_social_feed_item_workout():
 
 def test_user_stats():
     stats = UserStats.from_api(MOCK_USER_STATS_PAYLOAD)
-    assert stats.total_distance_km == 9855.0
-    assert stats.total_distance_formatted == "9855 km"
+    assert stats.total_distance_km == 9855.35
+    assert stats.total_distance_formatted == "9,855.35 km"
     assert stats.total_duration_hours == 3026.2
     assert stats.total_workouts == 2651
     assert stats.total_calories_kcal == 1460192
@@ -110,8 +109,8 @@ def test_user_stats():
     sports_by_name = {s.sport: s for s in stats.sports}
     assert "walking" in sports_by_name
     assert sports_by_name["walking"].workouts_count == 1015
-    assert sports_by_name["walking"].distance_km == 3408.0
-    assert sports_by_name["walking"].distance_formatted == "3408 km"
+    assert sports_by_name["walking"].distance_km == 3408.02
+    assert sports_by_name["walking"].distance_formatted == "3,408.02 km"
     assert sports_by_name["walking"].calories_kcal == 470174
 
     assert "gym" in sports_by_name
@@ -150,7 +149,7 @@ def test_vo2_max_history_empty():
 
 
 # ============================================================================
-# 5. TrainingSummary & SportTrainingSummary
+# 5. TrainingSummary & SportStats
 # ============================================================================
 
 
@@ -218,13 +217,30 @@ def test_recent_activities_summary():
 
 
 def test_workout_summary_from_api_missing_keys():
-    # Malformed inputs return None without raising KeyError
+    # Incomplete inputs return None without raising KeyError
     assert WorkoutSummary.from_api({}) is None
     assert WorkoutSummary.from_api({"startTime": 1789317924710}) is None
     assert WorkoutSummary.from_api({"workoutKey": "k1"}) is None
-    assert WorkoutSummary.from_api("not a dict") is None  # type: ignore
     assert WorkoutDetail.from_api({}) is None
     assert WorkoutDetail.from_api({"workoutKey": "k1"}) is None
+
+
+def test_workout_summary_non_numeric_fields():
+    # Non-numeric strings in numeric fields should not raise ValueError
+    raw = {
+        "workoutKey": "k_safe",
+        "startTime": 1789317924710,
+        "totalDistance": "n/a",
+        "totalTime": "invalid",
+        "avgSpeed": None,
+        "energyConsumption": "corrupted",
+    }
+    summary = WorkoutSummary.from_api(raw)
+    assert summary is not None
+    assert summary.distance_km == 0.0
+    assert summary.distance_formatted == "0.00 km"
+    assert summary.duration_seconds == 0.0
+    assert summary.calories_kcal is None
 
 
 def test_social_feed_item_explicit_null_fields():

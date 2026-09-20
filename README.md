@@ -1,96 +1,112 @@
 # Sports Tracker MCP Server (Unofficial)
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Python 3.14+](https://img.shields.io/badge/python-3.14+-blue.svg)](https://www.python.org/downloads/)
+[![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
 [![FastMCP](https://img.shields.io/badge/FastMCP-4.0+-brightgreen.svg)](https://github.com/jlowin/fastmcp)
 [![Code style: black](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)
 [![Type Checked: mypy](https://img.shields.io/badge/mypy-checked-blue.svg)](http://mypy-lang.org/)
 
+Ask your AI assistant about your training: workouts, VO2Max trends, training load, recovery, and lifetime stats — answered with interactive cards.
+
 > [!IMPORTANT]
 > **Unofficial Project**: This project is an independent, open-source Model Context Protocol (MCP) server. It is **not affiliated with, endorsed by, sponsored by, or associated with Sports Tracking Technologies Ltd, Amer Sports, Suunto**, or any of their affiliates or subsidiaries. All registered trademarks, product names, and company logos are the property of their respective owners.
 
-An unofficial [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) server for **Sports Tracker**, enabling AI assistants (such as Claude Desktop, Cursor, and Antigravity) to query workouts, activity history, training load, VO2Max progression, recovery metrics, and social feeds.
+> [!NOTE]
+> **Runs locally, always.** The server talks to Sports Tracker with a session key taken from your own browser. That key is tied to your account and never leaves your machine — so there is no hosted version of this server, and there cannot be one.
 
 ---
 
-## ⚡ Features
+## 🚀 Quick start
 
-- **8 FastMCP Tools**: Complete fitness tracking integration covering workouts, social feed, user statistics, training load, VO2Max trends, and activity breakdowns.
-- **Structured Pydantic Models**: Clean schemas with human-readable paces, formatted durations, and units.
-- **Dual Unit Support**: Effortlessly toggle between metric (km, km/h, min/km) and imperial (miles, mph, min/mi) across queries.
-- **LRU Bounded TTL Caching**: In-memory caching via `cachetools.TTLCache` (max 256 items, 60-second TTL) preventing redundant API requests and memory leaks.
-- **Resilient Pagination**: Multi-day summary tools dynamically paginate backwards through workout history without premature truncation.
+### 1. Get your session key
+
+Log in to [Sports Tracker Web](https://www.sports-tracker.com), open DevTools (`F12` / `Cmd+Option+I`) → **Network**, refresh the page, click any request to `api.sports-tracker.com`, and copy the value of the **`STTAuthorization`** request header.
+
+<!-- Screenshot goes here: Network tab with the STTAuthorization header highlighted. -->
+
+> [!WARNING]
+> Treat this key like a password — it grants full access to your Sports Tracker account. Never paste it into an issue, a gist, or a shared config. It also **expires**: when tools start failing with an authentication error, repeat this step to get a fresh one.
+
+### 2. Add the server
+
+**Claude Code** — one command:
+
+```bash
+claude mcp add sports-tracker -e STT_SESSION_KEY=your_session_key_here \
+  -- uvx --from git+https://github.com/wilkar/sports-tracker-mcp sport-tracker-mcp
+```
+
+**Claude Desktop** — add to `claude_desktop_config.json` (macOS: `~/Library/Application Support/Claude/claude_desktop_config.json`, Windows: `%APPDATA%\Claude\claude_desktop_config.json`):
+
+```json
+{
+  "mcpServers": {
+    "sports-tracker": {
+      "command": "uvx",
+      "args": [
+        "--from",
+        "git+https://github.com/wilkar/sports-tracker-mcp",
+        "sport-tracker-mcp"
+      ],
+      "env": {
+        "STT_SESSION_KEY": "your_session_key_here"
+      }
+    }
+  }
+}
+```
+
+**Cursor / Antigravity** — add the same JSON block to your MCP settings (`mcp_config.json`).
+
+Nothing to clone and no virtualenv to manage: [uv](https://github.com/astral-sh/uv) fetches and runs the server on demand. If your client reports `uvx: command not found`, use the absolute path from `which uvx` (e.g. `/opt/homebrew/bin/uvx`).
+
+### 3. Ask it something
+
+> *"How far did I run in the last 7 days?"*
+
+That's it. If you get an answer, you're done.
 
 ---
 
 ## 🛠️ Available MCP Tools
 
-| Tool | Description | Parameters |
-| :--- | :--- | :--- |
-| `get_recent_workouts` | Fetch recent workouts with formatted distance, duration, pace, and heart rate. | `limit` (default: 10), `imperial` (default: false) |
-| `get_social_feed` | Retrieve feed items from followed athletes or community members. | `limit` (default: 10), `imperial` (default: false) |
-| `get_workout_details` | In-depth metrics for a workout: ascent/descent, HR zones, gear, cadence, energy, and Suunto extensions. | `workout_key` (required), `imperial` (default: false) |
-| `get_user_stats` | Lifetime aggregate statistics and per-sport totals (distance, duration, calories, count). | `username` (optional), `imperial` (default: false) |
-| `get_vo2_max_history` | Historical aerobic capacity (VO2Max) and fitness age progression extracted from workouts. | `limit` (default: 20) |
-| `get_training_summary` | Aggregated volume, distance, time, and calories across all sports for the past *N* days. | `days` (default: 7), `imperial` (default: false) |
-| `get_training_load_and_recovery` | Current recovery hours, training stress score (TSS), peak training effect (PTE), EPOC, and recovery status. | *None* |
-| `get_recent_activities_summary` | Breakdown of sport frequency, total duration, and last performed dates over the past *N* days. | `days` (default: 14) |
+| Tool | UI Card | Description | Parameters |
+| :--- | :---: | :--- | :--- |
+| `get_recent_workouts` | ✅ | Fetch recent workouts with interactive sport and limit filters, clickable workout rows, and metrics. | `limit` (default: 10, supports 5, 10, 25, 'all'), `imperial` (default: false), `sport` (optional) |
+| `get_workout_details` | ✅ | In-depth workout analysis with interactive time series charts (HR, altitude, speed), HR zones, ascent/descent, and Suunto extensions. | `workout_key` (required), `imperial` (default: false) |
+| `get_training_load_and_recovery` | ✅ | Recovery gauge, cumulative recovery hours, TSS, PTE, and EPOC metrics. | *None* |
+| `get_training_summary` | ✅ | Aggregated volume, distance, time, and calories across sports for the past *N* days. | `days` (default: 7), `imperial` (default: false) |
+| `get_vo2_max_history` | ✅ | Aerobic capacity (VO2Max) trendline and fitness age progression extracted from workouts. | `limit` (default: 20) |
+| `get_user_stats` | ✅ | Lifetime aggregate statistics and per-sport totals (distance, duration, calories, count). | `username` (optional), `imperial` (default: false) |
+| `get_recent_activities_summary` | ✅ | Breakdown of sport frequency, total duration, and last performed dates over the past *N* days with interval selector. | `days` (default: 14) |
+| `get_social_feed` | ❌ (data-only) | Retrieve feed items from followed athletes or community members. | `limit` (default: 10), `imperial` (default: false) |
+
+Cards render as interactive HTML in hosts that support MCP Apps (`io.modelcontextprotocol/ui`); every tool also returns plain structured data, so clients without UI support lose nothing.
+
+### More things to ask
+
+- *"How much running and cycling have I logged over the past 14 days? Break it down by distance, time, and pace."*
+- *"Give me a detailed breakdown of my latest workout, including heart rate zones, elevation gain, and Suunto metrics in imperial units."*
+- *"What is my current recovery time, TSS, and EPOC? Am I ready for a tempo run today?"*
+- *"Plot my VO2Max and fitness age progression over my last 20 workouts."*
 
 ---
 
-## 💬 Example Assistant Prompts
-
-Once integrated, your AI assistant can answer natural language queries directly:
-
-- **Weekly Training Volume**: *"How much running and cycling have I logged over the past 14 days? Break it down by distance, time, and pace."*
-- **Workout Deep Dive**: *"Give me a detailed breakdown of my latest workout, including heart rate zones, cadence, elevation gain, and Suunto metrics in imperial units."*
-- **Recovery & Readiness**: *"What is my current recovery time, TSS, and EPOC from my recent activities? Am I ready for a tempo run today?"*
-- **Fitness Trends**: *"Plot my aerobic capacity (VO2Max) and fitness age progression over my last 20 workouts."*
-- **Interactive Dashboards**: *"Analyze my training load and render an interactive React dashboard with weekly volume charts and HR zone distribution."*
-
----
-
-## ⚙️ Configuration
-
-The server requires your Sports Tracker session key to authenticate requests.
-
-### Environment Variables
+## ⚙️ Configuration reference
 
 | Variable | Required | Default | Description |
 | :--- | :--- | :--- | :--- |
-| `STT_SESSION_KEY` | **Yes** | — | Your session token (`STTAuthorization` header). |
+| `STT_SESSION_KEY` | **Yes** | — | Your session token (the `STTAuthorization` header). |
 | `STT_BASE_URL` | No | `https://api.sports-tracker.com/apiserver/v1` | Sports Tracker API base endpoint. |
 
-### How to get your Session Key
+Pass both through your MCP client's `env` block (as in [Quick start](#2-add-the-server)); the server reads them from the process environment at startup.
 
-1. Log in to [Sports Tracker Web](https://www.sports-tracker.com) in your web browser.
-2. Open your browser's Developer Tools (`F12` or `Cmd+Option+I`) and switch to the **Network** tab.
-3. Refresh the page or click on any workout.
-4. Inspect any request to `api.sports-tracker.com` and copy the value of the `STTAuthorization` header (or find `sessionkey` in your browser cookies/local storage).
-5. Create a `.env` file in the project root:
-
-```bash
-cp .env.example .env
-```
-
-And populate:
-
-```env
-STT_SESSION_KEY=your_session_key_here
-```
+> [!NOTE]
+> **On `STT_BASE_URL`**: your session token is sent as a header to whatever host this names. Leave it at the default unless you are deliberately pointing at a trusted local debugging proxy.
 
 ---
 
-## 🚀 Getting Started
-
-### Prerequisites
-
-- Python 3.14+
-- [uv](https://github.com/astral-sh/uv) (recommended) or `pip`
-
-### Installation
-
-Clone the repository and install dependencies:
+## 🧑‍💻 Development
 
 ```bash
 git clone https://github.com/wilkar/sports-tracker-mcp.git
@@ -98,121 +114,59 @@ cd sports-tracker-mcp
 uv sync
 ```
 
-### Running the Server Directly
-
-You can start the server directly using `stdio` transport:
+Run the server from the clone:
 
 ```bash
-# Using uv:
-uv run sport-tracker
-
-# Or directly with Python:
-python main.py
+STT_SESSION_KEY="your_key" uv run sport-tracker-mcp
+# or keep it in a local .env (cp .env.example .env):
+uv run --env-file .env sport-tracker-mcp
 ```
 
-### Testing with MCP Inspector
-
-Inspect all tools interactively in your browser using FastMCP's inspector:
+Point an MCP client at your working copy by swapping the `--from` target for an absolute path:
 
 ```bash
-uv run fastmcp dev inspector src/sport_tracker_mcp/server.py
+claude mcp add sports-tracker-dev -e STT_SESSION_KEY=your_key \
+  -- uvx --from /absolute/path/to/sports-tracker-mcp sport-tracker-mcp
 ```
 
-Or inspect tool schemas directly from the CLI:
-
-```bash
-uv run fastmcp list src/sport_tracker_mcp/server.py
-```
-
----
-
-## 🔌 MCP Client Integration
-
-### Claude Desktop
-
-Add the server to your `claude_desktop_config.json`:
-- **macOS**: `~/Library/Application Support/Claude/claude_desktop_config.json`
-- **Windows**: `%APPDATA%\Claude\claude_desktop_config.json`
-
-```json
-{
-  "mcpServers": {
-    "sports-tracker": {
-      "command": "/path/to/sports-tracker-mcp/.venv/bin/sport-tracker",
-      "env": {
-      }
-    }
-  }
-}
-```
-
-### Antigravity / Cursor
-
-In your workspace or global MCP settings (`mcp_config.json`):
-
-```json
-{
-  "mcpServers": {
-    "sports-tracker": {
-      "command": "/path/to/sports-tracker-mcp/.venv/bin/sport-tracker",
-      "env": {
-
-      }
-    }
-  }
-}
-```
-
----
-
-## 📂 Project Structure
-
-```text
-sports-tracker-mcp/
-├── src/
-│   └── sport_tracker_mcp/
-│       ├── client/         # Async HTTP client with LRU TTLCache & error handling
-│       ├── formatting/     # Unit conversions (metric/imperial), pace, and duration utils
-│       ├── models/         # Pydantic schemas for workouts, stats, load & recovery
-│       ├── tools/          # 8 FastMCP tool implementations
-│       ├── config.py       # Environment variable resolution & .env loader
-│       └── server.py       # FastMCP server definition & CLI entrypoint
-├── tests/                  # Test suite (65 tests across client, models, tools, and formatting)
-├── .env.example            # Sample environment file
-├── pyproject.toml          # Project metadata, dependencies, and tool configs
-├── TODO.md                 # Roadmap and endpoint specs for upcoming tools
-└── README.md
-```
-
----
-
-## 🗺️ Roadmap & Planned Tools (TODO)
-
-The following tools are planned for future releases to expand Sports Tracker capabilities:
-- [ ] **`get_routes`**: List saved and recorded GPS routes with distances, speeds, and activity types.
-- [ ] **`get_route_details`**: In-depth GPS track waypoints, elevation profiles, and polyline coordinates for a specific route.
-- [ ] **`export_workout_gpx`**: Download standardized GPX XML track files for activities.
-- [ ] **`get_user_following`**: Retrieve followers and followed athlete profiles from Sports Tracker.
-
-See [TODO.md](TODO.md) for full endpoint specifications.
-
----
-
-## 🧪 Development & Testing
-
-Run the test suite:
+Tests, types and formatting:
 
 ```bash
 uv run pytest
-```
-
-Check types and formatting:
-
-```bash
 uv run mypy .
 uv run isort --check .
 uv run black --check .
 ```
+
+Inspect the tool schemas:
+
+```bash
+uv run fastmcp list src/sport_tracker_mcp/server.py
+uv run fastmcp dev inspector src/sport_tracker_mcp/server.py
+```
+
+### Project structure
+
+```text
+src/sport_tracker_mcp/
+├── client.py       # Async HTTP client with TTL cache & error handling
+├── config.py       # Environment variable resolution
+├── constants.py    # Activity ID mappings
+├── formatting.py   # Unit conversions (metric/imperial), pace, duration
+├── models.py       # Pydantic schemas for workouts, stats, load & recovery
+├── server.py       # FastMCP server, tool registration & UI cards
+├── tools.py        # Tool implementations
+└── ui.py           # HTML rendering for tool-result cards
+```
+
+---
+
+## 🗺️ Roadmap
+
+- [ ] **`get_routes`**: List saved and recorded GPS routes with distances, speeds, and activity types.
+- [ ] **`get_route_details`**: GPS track waypoints, elevation profiles, and polyline coordinates for a route.
+- [ ] **`export_workout_gpx`**: Download standardized GPX XML track files for activities.
+- [ ] **`get_user_following`**: Retrieve followers and followed athlete profiles.
 
 ---
 

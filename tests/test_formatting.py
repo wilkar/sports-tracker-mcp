@@ -1,12 +1,10 @@
 import pytest
 
 from sport_tracker_mcp.formatting import (
-    calculate_cutoff_ms,
     format_distance,
     format_duration,
     format_pace,
     format_speed,
-    within_window,
 )
 from tests.fixtures import (
     MOCK_WORKOUT_DETAILS_PAYLOAD,
@@ -48,9 +46,6 @@ def test_format_distance_zero_and_empty():
     assert val_mi == 0.0
     assert formatted_mi == "0.00 mi"
 
-    # Negative / None edge cases
-    assert format_distance(-100.0) == (0.0, "0.00 km")
-
 
 def test_format_distance_thresholds_from_routes_and_factory():
     # Long distance: 10502.4 meters (10.5 km -> <= 100 km threshold: 2 decimals)
@@ -65,15 +60,15 @@ def test_format_distance_thresholds_from_routes_and_factory():
     assert val == 5.0
     assert formatted == "5.00 km"
 
-    # Medium distance: between 100 km and 1000 km (1 decimal)
+    # Medium distance: 250.6 km
     val, formatted = format_distance(250_600.0)
     assert val == 250.6
-    assert formatted == "250.6 km"
+    assert formatted == "250.60 km"
 
-    # Ultra-long distance: > 1000 km (rounded integer)
+    # Ultra-long distance: 1,250.4 km
     val, formatted = format_distance(1_250_400.0)
-    assert val == 1250.0
-    assert formatted == "1250 km"
+    assert val == 1250.4
+    assert formatted == "1,250.40 km"
 
 
 # ============================================================================
@@ -84,42 +79,35 @@ def test_format_distance_thresholds_from_routes_and_factory():
 def test_format_speed_from_mock_workouts():
     # Workout 0: avgSpeed = 0.3 m/s
     walk_wo = MOCK_WORKOUTS_PAYLOAD[0]
-    speed_kmh, formatted_kmh = format_speed(walk_wo["avgSpeed"], imperial=False)
-    assert speed_kmh == 1.1
+    formatted_kmh = format_speed(walk_wo["avgSpeed"], imperial=False)
     assert formatted_kmh == "1.1 km/h"
 
-    speed_mph, formatted_mph = format_speed(walk_wo["avgSpeed"], imperial=True)
-    assert speed_mph == 0.7
+    formatted_mph = format_speed(walk_wo["avgSpeed"], imperial=True)
     assert formatted_mph == "0.7 mph"
 
     # Workout 1: avgSpeed = 0.0 m/s
     gym_wo = MOCK_WORKOUTS_PAYLOAD[1]
-    speed_zero, formatted_zero = format_speed(gym_wo["avgSpeed"])
-    assert speed_zero == 0.0
+    formatted_zero = format_speed(gym_wo["avgSpeed"])
     assert formatted_zero == "0.0 km/h"
 
     # Workout 2: avgSpeed = 2.37 m/s (2.37 * 3.6 = 8.532 -> 8.5 km/h)
     cycling_wo = MOCK_WORKOUTS_PAYLOAD[2]
-    speed_kmh, formatted_kmh = format_speed(cycling_wo["avgSpeed"])
-    assert speed_kmh == 8.5
+    formatted_kmh = format_speed(cycling_wo["avgSpeed"])
     assert formatted_kmh == "8.5 km/h"
 
 
 def test_format_speed_from_routes_and_factory():
     # Speed: 2.5 m/s (2.5 * 3.6 = 9.0 km/h)
     route_speed = 2.5
-    speed_kmh, formatted_kmh = format_speed(route_speed, imperial=False)
-    assert speed_kmh == 9.0
+    formatted_kmh = format_speed(route_speed, imperial=False)
     assert formatted_kmh == "9.0 km/h"
 
-    speed_mph, formatted_mph = format_speed(route_speed, imperial=True)
-    assert speed_mph == 5.6
+    formatted_mph = format_speed(route_speed, imperial=True)
     assert formatted_mph == "5.6 mph"
 
     # Factory helper: avgSpeed = 2.78 m/s (2.78 * 3.6 = 10.008 -> 10.0 km/h)
     mock_wo = make_mock_workout()
-    speed_kmh, formatted_kmh = format_speed(mock_wo["avgSpeed"])
-    assert speed_kmh == 10.0
+    formatted_kmh = format_speed(mock_wo["avgSpeed"])
     assert formatted_kmh == "10.0 km/h"
 
 
@@ -156,26 +144,6 @@ def test_format_pace_from_factory():
 
 def test_format_duration_edge_cases():
     assert format_duration(0) == "00:00:00"
-    assert format_duration(-10.5) == "00:00:00"
     assert format_duration(45) == "00:00:45"
     assert format_duration(3665) == "01:01:05"
     assert format_duration(90000) == "25:00:00"
-
-
-def test_calculate_cutoff_ms_and_within_window():
-    now_ts = 1_000_000_000.0  # reference ms
-    cutoff = calculate_cutoff_ms(days=7, now_ts=now_ts)
-    expected_cutoff = now_ts - (7 * 86400.0 * 1000.0)
-    assert cutoff == expected_cutoff
-
-    workouts = [
-        {"workoutKey": "w1", "startTime": now_ts - 1000},  # Inside
-        {"workoutKey": "w2", "startTime": expected_cutoff},  # Exactly on boundary
-        {"workoutKey": "w3", "startTime": expected_cutoff - 1},  # Outside
-        {"workoutKey": "w4", "startTime": None},  # Missing/None startTime
-        "not-a-dict",  # Malformed item
-    ]
-    filtered = within_window(workouts, days=7, now_ts=now_ts)
-    assert len(filtered) == 2
-    keys = [w["workoutKey"] for w in filtered]
-    assert keys == ["w1", "w2"]

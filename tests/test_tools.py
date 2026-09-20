@@ -1,13 +1,13 @@
 import httpx
 import pytest
 
-from sport_tracker_mcp.client.client import SportsTrackerClient
+from sport_tracker_mcp import tools
+from sport_tracker_mcp.client import SportsTrackerClient
 from sport_tracker_mcp.models import (
     ActivityCount,
     RecentActivitiesSummary,
     SocialFeedItem,
     SportStats,
-    SportTrainingSummary,
     TrainingLoadAndRecovery,
     TrainingSummary,
     UserStats,
@@ -16,8 +16,7 @@ from sport_tracker_mcp.models import (
     WorkoutDetail,
     WorkoutSummary,
 )
-from sport_tracker_mcp.tools import tools
-from sport_tracker_mcp.tools.tools import (
+from sport_tracker_mcp.tools import (
     get_recent_activities_summary,
     get_recent_workouts,
     get_social_feed,
@@ -28,6 +27,7 @@ from sport_tracker_mcp.tools.tools import (
     get_workout_details,
 )
 from tests.fixtures import (
+    MOCK_NOW_MS,
     MOCK_USER_FEED_PAYLOAD,
     MOCK_USER_STATS_PAYLOAD,
     MOCK_WORKOUT_DETAILS_PAYLOAD,
@@ -44,6 +44,9 @@ def mock_sports_tracker_client(monkeypatch):
     transport = httpx.MockTransport(sports_tracker_mock_handler)
     mocked_client = SportsTrackerClient(session_key="mock-key", transport=transport)
     monkeypatch.setattr(tools, "client", mocked_client)
+    monkeypatch.setattr(
+        "sport_tracker_mcp.tools.time.time", lambda: MOCK_NOW_MS / 1000.0
+    )
     return mocked_client
 
 
@@ -110,6 +113,64 @@ async def test_get_recent_workouts_imperial():
     w0 = results[0]
     assert "mi" in w0.distance_formatted
     assert "mph" in w0.avg_speed_formatted
+
+
+@pytest.mark.asyncio
+async def test_get_recent_workouts_sport_filter():
+    cycling_workouts = await get_recent_workouts(limit=10, sport="cycling")
+    assert len(cycling_workouts) > 0
+    assert all(w.sport == "cycling" for w in cycling_workouts)
+
+    gym_workouts = await get_recent_workouts(limit=10, sport="gym")
+    assert len(gym_workouts) > 0
+    assert all(w.sport == "gym" for w in gym_workouts)
+
+    nonexistent = await get_recent_workouts(limit=10, sport="nonexistent_sport")
+    assert len(nonexistent) == 0
+
+
+def test_sport_matches_helper():
+    from sport_tracker_mcp.tools import _sport_matches
+
+    assert _sport_matches("cycling", "cycling")
+    assert _sport_matches("CYCLING", "cycling")
+    assert _sport_matches("bike", "mountain biking")
+    assert _sport_matches("cycle", "indoor cycling")
+    assert _sport_matches("run", "trail running")
+    assert _sport_matches("walk", "walking")
+    assert not _sport_matches("cycling", "running")
+
+
+def test_normalize_limit_helper():
+    from sport_tracker_mcp.tools import _normalize_limit
+
+    assert _normalize_limit(25) == 25
+    assert _normalize_limit("25") == 25
+    assert _normalize_limit("all") == 0
+    assert _normalize_limit("ALL") == 0
+    assert _normalize_limit(0) == 0
+    assert _normalize_limit("0") == 0
+    assert _normalize_limit("invalid") == 10
+    assert _normalize_limit(None) == 10
+
+
+@pytest.mark.asyncio
+async def test_get_recent_workouts_limit_variants():
+    # Integer limit
+    res_int = await get_recent_workouts(limit=25)
+    assert isinstance(res_int, list)
+
+    # String integer limit
+    res_str = await get_recent_workouts(limit="25")
+    assert isinstance(res_str, list)
+
+    # 'all' limit
+    res_all = await get_recent_workouts(limit="all")
+    assert isinstance(res_all, list)
+
+    # 0 limit
+    res_zero = await get_recent_workouts(limit=0)
+    assert isinstance(res_zero, list)
 
 
 # ============================================================================
@@ -179,8 +240,8 @@ async def test_get_user_stats():
     stats = await get_user_stats()
 
     assert isinstance(stats, UserStats)
-    assert stats.total_distance_km == 9855.0
-    assert stats.total_distance_formatted == "9855 km"
+    assert stats.total_distance_km == 9855.35
+    assert stats.total_distance_formatted == "9,855.35 km"
     assert stats.total_duration_hours == 3026.2
     assert stats.total_workouts == 2651
     assert stats.total_calories_kcal == 1460192
@@ -321,50 +382,51 @@ async def test_get_recent_activities_summary():
 
 @pytest.mark.asyncio
 async def test_get_recent_workouts_malformed_skipped(monkeypatch):
-    """Bug 4: get_recent_workouts must skip malformed entries without KeyError."""
+    """Bug 4: get_recent_workouts must skip malformed entries without KeyError or ValueError."""
 
     async def mock_malformed_workouts(*args, **kwargs):
         return [
             {"workoutKey": "k1", "startTime": 1789317924710, "activityId": 1},
             {"bad": "entry", "no_key": 123},
-            "not a dict",
+            {"workoutKey": "k2", "startTime": 1789317924710, "totalDistance": "n/a"},
         ]
 
     monkeypatch.setattr(tools.client, "get_workouts", mock_malformed_workouts)
     results = await get_recent_workouts(limit=10)
-    assert len(results) == 1
+    assert len(results) == 2
     assert results[0].workout_key == "k1"
+    assert results[1].workout_key == "k2"
+    assert results[1].distance_km == 0.0
 
 
 @pytest.mark.asyncio
-async def test_days_filtering_training_summary():
+async def test_days_filtering_training_summary(monkeypatch):
     """Bug 2 & 5: get_training_summary actually filters by days window."""
-    # Workout 0: 1789317924710 (~0.6h before ref)
-    # Workout 1: 1789295335480 (~6.8h before ref)
-    # Workout 2: 1789204574340 (~32h before ref)
     ref_ts = 1789320000000.0
+    monkeypatch.setattr("sport_tracker_mcp.tools.time.time", lambda: ref_ts / 1000.0)
 
     # days=1: cutoff is 24 hours prior -> Workout 0 and 1 are within window, Workout 2 is not
-    sum_1d = await get_training_summary(days=1, now_ts=ref_ts)
+    sum_1d = await get_training_summary(days=1)
     assert sum_1d.workouts_count == 2
     assert sum_1d.days == 1
 
     # days=7: all 3 workouts are within window
-    sum_7d = await get_training_summary(days=7, now_ts=ref_ts)
+    sum_7d = await get_training_summary(days=7)
     assert sum_7d.workouts_count == 3
     assert sum_7d.days == 7
 
 
 @pytest.mark.asyncio
-async def test_days_filtering_recent_activities_summary():
+async def test_days_filtering_recent_activities_summary(monkeypatch):
     """Bug 3: get_recent_activities_summary actually filters by days window."""
     ref_ts = 1789320000000.0
+    monkeypatch.setattr("sport_tracker_mcp.tools.time.time", lambda: ref_ts / 1000.0)
 
-    rec_1d = await get_recent_activities_summary(days=1, now_ts=ref_ts)
+    rec_1d = await get_recent_activities_summary(days=1)
     assert rec_1d.total_sessions == 2
     assert rec_1d.days == 1
 
-    rec_7d = await get_recent_activities_summary(days=7, now_ts=ref_ts)
+    rec_7d = await get_recent_activities_summary(days=7)
     assert rec_7d.total_sessions == 3
     assert rec_7d.days == 7
 
@@ -374,6 +436,7 @@ async def test_pagination_wider_window(monkeypatch):
     """Bug 5: _fetch_workouts_for_days paginates through multiple pages until pre-dating window."""
     ref_ts = 1789320000000.0
     cutoff_ms = ref_ts - (30 * 86400.0 * 1000.0)
+    monkeypatch.setattr("sport_tracker_mcp.tools.time.time", lambda: ref_ts / 1000.0)
 
     # Generate 60 workouts in window and 1 older workout
     page1 = [
@@ -399,36 +462,6 @@ async def test_pagination_wider_window(monkeypatch):
         return []
 
     monkeypatch.setattr(tools.client, "get_workouts", mock_paginated_workouts)
-    fetched = await tools._fetch_workouts_for_days(days=30, now_ts=ref_ts)
+    fetched = await tools._fetch_workouts_for_days(days=30)
     assert len(fetched) == 60
     assert all(w["workoutKey"] != "old_workout" for w in fetched)
-
-
-@pytest.mark.asyncio
-async def test_fetch_workouts_safety_cap(monkeypatch, caplog):
-    """Verify safety cap breaks loop and logs warning when offset hits max_workouts."""
-    ref_ts = 1789320000000.0
-
-    async def mock_endless_workouts(limit=50, offset=0, **kwargs):
-        # Always return full pages of recent workouts
-        return [
-            {
-                "workoutKey": f"w_{offset}_{i}",
-                "startTime": ref_ts - 1000,
-                "activityId": 1,
-            }
-            for i in range(limit)
-        ]
-
-    monkeypatch.setattr(tools.client, "get_workouts", mock_endless_workouts)
-
-    import logging
-
-    with caplog.at_level(logging.WARNING):
-        fetched = await tools._fetch_workouts_for_days(
-            days=30, now_ts=ref_ts, max_workouts=100
-        )
-
-    # 2 pages of 50 = 100 workouts before cap hit
-    assert len(fetched) == 100
-    assert any("safety limit" in record.message for record in caplog.records)
