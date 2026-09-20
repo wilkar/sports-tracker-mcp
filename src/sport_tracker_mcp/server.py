@@ -1,3 +1,4 @@
+import os
 import tempfile
 from pathlib import Path
 from typing import Any
@@ -47,9 +48,16 @@ def _card(tool: str, markup: str, data: Any) -> ToolResult:
     nothing.
     """
     _latest_card[tool] = markup
-    CARD_DIR.mkdir(parents=True, exist_ok=True)
+    CARD_DIR.mkdir(mode=0o700, parents=True, exist_ok=True)
+    CARD_DIR.chmod(0o700)
     path = CARD_DIR / f"{tool}.html"
-    path.write_text(markup, encoding="utf-8")
+
+    with open(
+        os.open(path, os.O_CREAT | os.O_WRONLY | os.O_TRUNC, 0o600),
+        "w",
+        encoding="utf-8",
+    ) as f:
+        f.write(markup)
     return ToolResult(
         content=[TextContent(type="text", text=f"Interactive card: file://{path}")],
         structured_content=data,
