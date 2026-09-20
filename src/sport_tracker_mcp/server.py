@@ -1,10 +1,11 @@
 import os
+import json
 import tempfile
 from pathlib import Path
 from typing import Any
 
 from fastmcp import FastMCP
-from fastmcp.apps import AppConfig
+from fastmcp.apps import AppConfig, ResourceCSP
 from fastmcp.tools import ToolResult
 from fastmcp.utilities.mime import UI_MIME_TYPE
 from mcp.types import TextContent
@@ -32,34 +33,36 @@ CARD_DIR = Path(tempfile.gettempdir()) / "sport-tracker-cards"
 
 
 def _card(tool: str, markup: str, data: Any) -> ToolResult:
-    """Structured data for the model; the rendered card for the widget.
+    """Send the data to the model and the rendered card to the widget.
 
     Three consumers, three channels:
 
-    * `structured_content` — the model reasons over this.
-    * `_meta["sport-tracker/card"]` — the MCP Apps widget. The host fetches the
-      ui:// shell BEFORE the tool runs, so the card cannot live in the resource;
-      it rides on the tool result and the shell injects it on arrival.
-    * a file on disk — for hosts with no widget support at all, linked from the
-      one line of text the model sees.
+    * `content` — the data as compact JSON, plus a link to the card file. This
+      has to carry the data: hosts that render a widget commonly hand the model
+      the content blocks ONLY, so a tool whose data lives solely in
+      `structured_content` leaves the model unable to follow up — it cannot read
+      a `workout_key` to fetch details, or compare distances to find the longest
+      ride.
+    * `structured_content` — the same data, typed, for hosts that do read it.
+    * `_meta["sport-tracker/card"]` — the rendered card for the MCP Apps widget.
+      The host fetches the ui:// shell BEFORE the tool runs, so the card cannot
+      live in the resource; it rides here and the shell injects it on arrival.
 
-    The markup never goes in `content`: a host without MCP Apps flattens that
-    into the model's context, costing ~8x the structured payload to render
-    nothing.
+    The markup itself never goes in `content`: a host without MCP Apps flattens
+    that into the model's context, costing ~8x the data to render nothing.
     """
     _latest_card[tool] = markup
-    CARD_DIR.mkdir(mode=0o700, parents=True, exist_ok=True)
-    CARD_DIR.chmod(0o700)
+    CARD_DIR.mkdir(parents=True, exist_ok=True)
     path = CARD_DIR / f"{tool}.html"
-
-    with open(
-        os.open(path, os.O_CREAT | os.O_WRONLY | os.O_TRUNC, 0o600),
-        "w",
-        encoding="utf-8",
-    ) as f:
-        f.write(markup)
+    path.write_text(markup, encoding="utf-8")
+    payload = json.dumps(data, separators=(",", ":"), default=str)
     return ToolResult(
-        content=[TextContent(type="text", text=f"Interactive card: file://{path}")],
+        content=[
+            TextContent(
+                type="text",
+                text=f"{payload}\n\nInteractive card: file://{path}",
+            )
+        ],
         structured_content=data,
         meta={ui.CARD_META_KEY: markup},
     )
@@ -183,7 +186,24 @@ for _tool in UI_TOOLS:
     # `io.modelcontextprotocol/ui` alongside it stopped Claude Desktop from
     # fetching the resource at all — that id belongs to protocol 2026-07-28,
     # which this handshake (2025-11-25) does not negotiate.
-    mcp.tool(_tool, name=_name, app=AppConfig(resource_uri=_uri))
+    # The shell loads the ext-apps client and the card's webfonts from CDNs;
+    # without declaring them the widget's CSP blocks both and the card never
+    # gets past "loading…".
+    mcp.tool(
+        _tool,
+        name=_name,
+        app=AppConfig(
+            resource_uri=_uri,
+            csp=ResourceCSP(
+                resource_domains=[
+                    "https://cdn.jsdelivr.net",
+                    "https://fonts.googleapis.com",
+                    "https://fonts.gstatic.com",
+                ],
+                connect_domains=["https://cdn.jsdelivr.net"],
+            ),
+        ),
+    )
     # One concrete resource per tool, not a `{tool}` template: templates are
     # served from resources/templates/list, which Claude Desktop does not call —
     # it lists resources/list and reads the URI declared in the tool's meta.

@@ -8,6 +8,8 @@ single source of truth in ``THEME`` below.
 """
 
 from datetime import datetime
+from pathlib import Path
+import re
 from html import escape
 from typing import Any
 
@@ -23,6 +25,7 @@ from .models import (
 )
 from .tools import _normalize_limit
 
+# Light is the design's home ground: warm paper, technical-drawing ink.
 THEME = {
     "paper": "#F1EFE8",
     "panel": "#FBFAF6",
@@ -39,82 +42,127 @@ THEME = {
     "accent2": "#6C8CE4",
     "accent": "#3F6BE0",
     "warn": "#C4632A",
+    # Hard offset, no blur. Dark needs a heavier one to read at all.
+    "shadow": "rgba(26,31,43,.06)",
 }
 
-# Ordered series walk the accent ramp and end on warn.
-RAMP = [
-    THEME["accent4"],
-    THEME["accent3"],
-    THEME["accent2"],
-    THEME["accent"],
-    THEME["warn"],
-]
+# Dark keeps the same roles, not an inversion: the ground takes the ink's hue
+# family, the ink takes the paper's warmth, and the accent ramp runs dim->bright
+# so ordered series still read in order.
+DARK = {
+    "paper": "#14161B",
+    "panel": "#1B1E25",
+    "head": "#23262E",
+    "fill": "#2A2E37",
+    "rule": "#3A3F4A",
+    "hair": "#2E323B",
+    "hair2": "#24272F",
+    "ink": "#E8E6DF",
+    "ink2": "#A8AEBC",
+    "ink3": "#7A8090",
+    "accent4": "#2E4478",
+    "accent3": "#3F5C9E",
+    "accent2": "#5478C9",
+    "accent": "#6E95F0",
+    "warn": "#E08A52",
+    "shadow": "rgba(0,0,0,.45)",
+}
+
+# Ordered series walk the accent ramp and end on warn. Referenced as CSS vars so
+# a theme swap recolours bars and zone rows without re-rendering.
+RAMP = [f"var(--{k})" for k in ("accent4", "accent3", "accent2", "accent", "warn")]
+
+
+def _vars(palette: dict[str, str]) -> str:
+    return ";".join(f"--{k}:{v}" for k, v in palette.items())
+
 
 _CSS = """
+:root{%(light)s;color-scheme:light}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){%(dark)s;color-scheme:dark}}
+:root[data-theme="dark"]{%(dark)s;color-scheme:dark}
+
 *{box-sizing:border-box}
-body{margin:0;background:%(paper)s;color:%(ink)s;
+body{margin:0;background:var(--paper);color:var(--ink);
  font-family:'Space Grotesk',system-ui,-apple-system,sans-serif;-webkit-font-smoothing:antialiased;
- background-image:linear-gradient(%(hair)s 1px,transparent 1px),linear-gradient(90deg,%(hair)s 1px,transparent 1px);
+ background-image:linear-gradient(var(--hair) 1px,transparent 1px),linear-gradient(90deg,var(--hair) 1px,transparent 1px);
  background-size:32px 32px}
 .wrap{max-width:1280px;margin:0 auto;padding:24px 16px 48px;display:flex;flex-direction:column;gap:20px}
 .m{font-family:'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,monospace;font-variant-numeric:tabular-nums}
 .lbl{font-family:'JetBrains Mono',ui-monospace,monospace;font-size:10px;letter-spacing:.08em;
- text-transform:uppercase;color:%(ink3)s}
-.card{background:%(panel)s;border:1px solid %(rule)s;box-shadow:3px 3px 0 rgba(26,31,43,.06)}
+ text-transform:uppercase;color:var(--ink3)}
+.card{background:var(--panel);border:1px solid var(--rule);box-shadow:3px 3px 0 var(--shadow)}
 .hd{display:flex;flex-wrap:wrap;align-items:center;gap:10px;padding:9px 14px;
- border-bottom:1px solid %(rule)s;background:%(head)s}
-.hd .i{font-size:11px;font-weight:600;color:%(accent)s}
+ border-bottom:1px solid var(--rule);background:var(--head)}
+.hd .i{font-size:11px;font-weight:600;color:var(--accent)}
 .hd .n{font-size:13px;font-weight:600}
-.hd .a{font-size:11px;color:%(ink3)s}
-.hd .r{margin-left:auto;font-size:11px;color:%(ink3)s}
+.hd .a{font-size:11px;color:var(--ink3)}
+.hd .r{margin-left:auto;font-size:11px;color:var(--ink3)}
 .pad{padding:16px 14px}
-.bd{border-bottom:1px solid %(hair)s}
-.cells{display:grid;gap:1px;background:%(hair)s;border-bottom:1px solid %(hair)s}
-.cell{background:%(panel)s;padding:12px}
-.cell .k{font-family:'JetBrains Mono',ui-monospace,monospace;font-size:10px;color:%(ink3)s}
+.bd{border-bottom:1px solid var(--hair)}
+.cells{display:grid;gap:1px;background:var(--hair);border-bottom:1px solid var(--hair)}
+.cell{background:var(--panel);padding:12px}
+.cell .k{font-family:'JetBrains Mono',ui-monospace,monospace;font-size:10px;color:var(--ink3)}
 .cell .v{font-family:'JetBrains Mono',ui-monospace,monospace;font-size:19px;font-weight:600;
  font-variant-numeric:tabular-nums}
 .big{font-family:'JetBrains Mono',ui-monospace,monospace;font-size:42px;font-weight:600;
  line-height:1.05;letter-spacing:-.02em;font-variant-numeric:tabular-nums}
-.track{background:%(fill)s}
+.track{background:var(--fill)}
 .track>span{display:block;height:100%%}
 .zone{display:grid;grid-template-columns:52px 1fr 66px;align-items:center;gap:10px}
 .zone+.zone{margin-top:8px}
 .sport{display:grid;grid-template-columns:1fr 92px 76px;align-items:center;gap:10px;padding:8px 14px}
 .sport .nm{font-size:13px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .rows{width:100%%;border-collapse:collapse}
-.rows th{text-align:left;font-weight:400;padding:8px 14px;border-bottom:1px solid %(hair)s;
+.rows th{text-align:left;font-weight:400;padding:8px 14px;border-bottom:1px solid var(--hair);
  font-family:'JetBrains Mono',ui-monospace,monospace;font-size:10px;letter-spacing:.08em;
- text-transform:uppercase;color:%(ink3)s;white-space:nowrap}
-.rows td{padding:9px 14px;border-bottom:1px solid %(hair2)s;font-family:'JetBrains Mono',ui-monospace,monospace;
+ text-transform:uppercase;color:var(--ink3);white-space:nowrap}
+.rows td{padding:9px 14px;border-bottom:1px solid var(--hair2);font-family:'JetBrains Mono',ui-monospace,monospace;
  font-size:12px;font-variant-numeric:tabular-nums}
 .rows td.s{font-family:'Space Grotesk',system-ui,sans-serif;font-size:13px;font-weight:500}
 .r{text-align:right}
-.dim{color:%(ink2)s}
+.dim{color:var(--ink2)}
 .tight,.tight .cell{padding:9px 10px}
 .v17 .v,.v17{font-size:17px}
 .scroll{overflow-x:auto}
-.seg{display:flex;border:1px solid %(ink)s}
+.seg{display:flex;border:1px solid var(--ink)}
 .seg button{font-family:'JetBrains Mono',ui-monospace,monospace;font-size:11px;padding:5px 10px;
- border:0;cursor:pointer;background:transparent;color:%(ink)s}
-.seg button+button{border-left:1px solid %(ink)s}
-.seg button[aria-pressed=true]{background:%(ink)s;color:%(paper)s}
-.chip{display:inline-block;padding:2px 6px;border:1px solid %(accent)s;color:%(accent)s;
+ border:0;cursor:pointer;background:transparent;color:var(--ink)}
+.seg button+button{border-left:1px solid var(--ink)}
+.seg button[aria-pressed=true]{background:var(--ink);color:var(--paper)}
+.chip{display:inline-block;padding:2px 6px;border:1px solid var(--accent);color:var(--accent);
  font-family:'JetBrains Mono',ui-monospace,monospace;font-size:10px}
 .workout-row{transition:background .15s ease}
-.workout-row:hover{background:%(hair)s !important}
+.workout-row:hover{background:var(--hair) !important}
 .ts-pane{animation:fadeIn .2s ease}
 @keyframes fadeIn{from{opacity:0;transform:translateY(2px)}to{opacity:1;transform:translateY(0)}}
 .split{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr))}
-.split>div{padding:16px 14px;border-bottom:1px solid %(hair)s}
-.split>div+div{border-left:1px solid %(hair)s}
-:focus-visible{outline:2px solid %(accent)s;outline-offset:2px}
+.split>div{padding:16px 14px;border-bottom:1px solid var(--hair)}
+.split>div+div{border-left:1px solid var(--hair)}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 @media (max-width:560px){.split>div+div{border-left:0}}
-""" % THEME
+""" % {"light": _vars(THEME), "dark": _vars(DARK)}
 
 _JS = """
 (function(){
- var d=document;
+ var d=document,K='stt-theme';
+
+ // "auto" follows the host (MCP Apps pushes a theme) or the OS; light/dark pin it.
+ function applyTheme(choice){
+  var root=d.documentElement;
+  if(choice==='auto'){ root.removeAttribute('data-theme'); }
+  else { root.setAttribute('data-theme',choice); }
+  d.querySelectorAll('[data-theme-set]').forEach(function(b){
+   b.setAttribute('aria-pressed',String(b.dataset.themeSet===choice));});
+  try{ localStorage.setItem(K,choice); }catch(e){}
+ }
+ // A theme the host stamped on <html> before this ran beats the "auto" default.
+ var saved=null; try{ saved=localStorage.getItem(K); }catch(e){}
+ applyTheme(saved || d.documentElement.getAttribute('data-theme') || 'auto');
+ d.addEventListener('click',function(e){
+  var b=e.target.closest('[data-theme-set]'); if(!b) return;
+  applyTheme(b.dataset.themeSet);
+ });
 
  function applyWorkoutFilters(card){
   var limBtn=card.querySelector('[data-limit][aria-pressed="true"]');
@@ -226,6 +274,18 @@ def _limit_selector(limit: int | str = 10) -> str:
     )
 
 
+def _theme_toggle() -> str:
+    """Theme control. Lives in `_head`, so every card gets one for free."""
+    return (
+        '<div style="display:flex;align-items:center;gap:6px">'
+        '<span class="lbl">theme</span><div class="seg">'
+        '<button type="button" data-theme-set="light" aria-pressed="false">light</button>'
+        '<button type="button" data-theme-set="dark" aria-pressed="false">dark</button>'
+        '<button type="button" data-theme-set="auto" aria-pressed="true">auto</button>'
+        "</div></div>"
+    )
+
+
 def _head(
     index: str,
     tool: str,
@@ -241,10 +301,11 @@ def _head(
         bits.append(f'<span class="m a">{_e(args)}</span>')
     if returns:
         bits.append(f'<span class="m r">&rarr; {_e(returns)}</span>')
-    if extra:
-        bits.append(
-            f'<div style="margin-left:auto;display:flex;align-items:center;gap:12px">{extra}</div>'
-        )
+    controls = f"{extra} {_theme_toggle()}" if extra else _theme_toggle()
+    bits.append(
+        f'<div style="margin-left:auto;display:flex;flex-wrap:wrap;'
+        f'align-items:center;gap:12px">{controls}</div>'
+    )
     return f'<div class="hd">{"".join(bits)}</div>'
 
 
@@ -272,8 +333,8 @@ def _sport_rows(rows: list[tuple[str, int, float, str, str]]) -> str:
         out.append(
             f'<div class="sport"><div style="display:flex;align-items:center;gap:8px;min-width:0">'
             f'<span class="nm">{_e(sport)}</span>'
-            f'<span class="m" style="font-size:11px;color:{THEME["ink3"]};flex:none">&times;{count}</span>'
-            f'{_bar(_pct(value, peak), THEME["accent"], "5px")}</div>'
+            f'<span class="m" style="font-size:11px;color:var(--ink3);flex:none">&times;{count}</span>'
+            f'{_bar(_pct(value, peak), "var(--accent)", "5px")}</div>'
             f'<div class="m r" style="font-size:12px">{_e(dist_str)}</div>'
             f'<div class="m r dim" style="font-size:12px">{_e(trailing)}</div>'
             f"</div>"
@@ -311,7 +372,7 @@ def render_recent_workouts(
             f'<td class="s"><span style="font-weight:600">{_e(w.sport)}</span></td>'
             f'<td class="dim">{_e(_when(w.start_time))}</td>'
             f'<td><div style="display:flex;align-items:center;gap:10px">'
-            f'{_bar(_pct(w.distance_km, peak), THEME["accent"])}'
+            f'{_bar(_pct(w.distance_km, peak), "var(--accent)")}'
             f'<span class="r" style="width:82px;flex:none">{_e(w.distance_formatted)}</span>'
             f"</div></td>"
             f"<td>{_e(w.duration_formatted)}</td>"
@@ -323,7 +384,7 @@ def render_recent_workouts(
     if not rows:
         sport_msg = f" for '{sport}'" if sport else ""
         rows = [
-            f'<tr><td colspan="8" style="color:{THEME["ink3"]}">no workouts in range{_e(sport_msg)}</td></tr>'
+            f'<tr><td colspan="8" style="color:var(--ink3)">no workouts in range{_e(sport_msg)}</td></tr>'
         ]
 
     unique_sports = list(dict.fromkeys(w.sport for w in items if w.sport))
@@ -360,10 +421,10 @@ def render_recent_workouts(
 def _render_series_svg(
     pts: list[TimeSeriesPoint],
     label: str,
-    color: str = THEME["accent"],
+    color: str = "var(--accent)",
 ) -> str:
     if not pts:
-        return f'<div class="m" style="padding:14px;color:{THEME["ink3"]}">no time series data</div>'
+        return f'<div class="m" style="padding:14px;color:var(--ink3)">no time series data</div>'
     vals = [p.value for p in pts]
     secs = [p.seconds for p in pts]
     min_v, max_v = min(vals), max(vals)
@@ -403,17 +464,17 @@ def _render_series_svg(
         f'<stop offset="0%" stop-color="{color}" stop-opacity="0.32"/>'
         f'<stop offset="100%" stop-color="{color}" stop-opacity="0.02"/>'
         f"</linearGradient></defs>"
-        f'<line x1="{pad_l}" y1="{pad_t}" x2="{pad_l + pw}" y2="{pad_t}" stroke="{THEME["hair"]}" stroke-dasharray="3 3"/>'
-        f'<line x1="{pad_l}" y1="{mid_y}" x2="{pad_l + pw}" y2="{mid_y}" stroke="{THEME["hair"]}" stroke-dasharray="3 3"/>'
-        f'<line x1="{pad_l}" y1="{pad_t + ph}" x2="{pad_l + pw}" y2="{pad_t + ph}" stroke="{THEME["rule"]}"/>'
+        f'<line x1="{pad_l}" y1="{pad_t}" x2="{pad_l + pw}" y2="{pad_t}" style="stroke:var(--hair)" stroke-dasharray="3 3"/>'
+        f'<line x1="{pad_l}" y1="{mid_y}" x2="{pad_l + pw}" y2="{mid_y}" style="stroke:var(--hair)" stroke-dasharray="3 3"/>'
+        f'<line x1="{pad_l}" y1="{pad_t + ph}" x2="{pad_l + pw}" y2="{pad_t + ph}" style="stroke:var(--rule)"/>'
         f'<path d="{area_d}" fill="url(#{gid})"/>'
         f'<path d="{line_d}" fill="none" stroke="{color}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>'
-        f'<text x="{pad_l - 6}" y="{pad_t + 4}" text-anchor="end" class="m" font-size="10" fill="{THEME["ink3"]}">{max_v:.0f}</text>'
-        f'<text x="{pad_l - 6}" y="{mid_y + 3}" text-anchor="end" class="m" font-size="10" fill="{THEME["ink3"]}">{mid_v:.0f}</text>'
-        f'<text x="{pad_l - 6}" y="{pad_t + ph}" text-anchor="end" class="m" font-size="10" fill="{THEME["ink3"]}">{min_v:.0f}</text>'
-        f'<text x="{pad_l}" y="{height - 6}" class="m" font-size="10" fill="{THEME["ink3"]}">0:00</text>'
-        f'<text x="{pad_l + pw / 2}" y="{height - 6}" text-anchor="middle" class="m" font-size="10" fill="{THEME["ink3"]}">{dur_m0}</text>'
-        f'<text x="{pad_l + pw}" y="{height - 6}" text-anchor="end" class="m" font-size="10" fill="{THEME["ink3"]}">{dur_m1}</text>'
+        f'<text x="{pad_l - 6}" y="{pad_t + 4}" text-anchor="end" class="m" font-size="10" style="fill:var(--ink3)">{max_v:.0f}</text>'
+        f'<text x="{pad_l - 6}" y="{mid_y + 3}" text-anchor="end" class="m" font-size="10" style="fill:var(--ink3)">{mid_v:.0f}</text>'
+        f'<text x="{pad_l - 6}" y="{pad_t + ph}" text-anchor="end" class="m" font-size="10" style="fill:var(--ink3)">{min_v:.0f}</text>'
+        f'<text x="{pad_l}" y="{height - 6}" class="m" font-size="10" style="fill:var(--ink3)">0:00</text>'
+        f'<text x="{pad_l + pw / 2}" y="{height - 6}" text-anchor="middle" class="m" font-size="10" style="fill:var(--ink3)">{dur_m0}</text>'
+        f'<text x="{pad_l + pw}" y="{height - 6}" text-anchor="end" class="m" font-size="10" style="fill:var(--ink3)">{dur_m1}</text>'
         f"</svg>"
     )
 
@@ -440,13 +501,13 @@ def render_workout_details(detail: WorkoutDetail, *, imperial: bool = False) -> 
         charts = []
         tab_buttons = []
         stream_meta = {
-            "heart_rate": ("Heart Rate", "bpm", THEME["warn"]),
+            "heart_rate": ("Heart Rate", "bpm", "var(--warn)"),
             "altitude": (
                 "Altitude",
                 "ft" if imperial else "m",
-                THEME["accent"],
+                "var(--accent)",
             ),
-            "speed": ("Speed", "mph" if imperial else "km/h", THEME["accent2"]),
+            "speed": ("Speed", "mph" if imperial else "km/h", "var(--accent2)"),
         }
         first_key = next(
             (
@@ -464,7 +525,7 @@ def render_workout_details(detail: WorkoutDetail, *, imperial: bool = False) -> 
             if not pts:
                 continue
             title, unit, color = stream_meta.get(
-                key, (key.replace("_", " ").title(), "", THEME["accent"])
+                key, (key.replace("_", " ").title(), "", "var(--accent)")
             )
             is_active = key == first_key
             tab_buttons.append(
@@ -486,12 +547,12 @@ def render_workout_details(detail: WorkoutDetail, *, imperial: bool = False) -> 
         if charts:
             tabs_header = (
                 f'<div style="display:flex;align-items:center;justify-content:space-between;padding:9px 14px;'
-                f'border-bottom:1px solid {THEME["hair"]};background:{THEME["head"]}">'
+                f'border-bottom:1px solid var(--hair);background:var(--head)">'
                 f'<div class="lbl">time series data</div>'
                 f'<div class="seg">{"".join(tab_buttons)}</div></div>'
             )
             time_series_html = (
-                f'<div class="bd" style="background:{THEME["panel"]}">'
+                f'<div class="bd" style="background:var(--panel)">'
                 f"{tabs_header}"
                 f'<div style="padding:14px">{"".join(charts)}</div></div>'
             )
@@ -588,21 +649,21 @@ def render_training_load_and_recovery(load: TrainingLoadAndRecovery) -> str:
     gauge = (
         f'<svg viewBox="0 0 120 120" width="118" height="118" style="flex:none" role="img" '
         f'aria-label="Cumulative recovery {load.cumulative_recovery_hours:g} hours">'
-        f'<circle cx="60" cy="60" r="50" fill="none" stroke="{THEME["fill"]}" stroke-width="12"></circle>'
-        f'<circle cx="60" cy="60" r="50" fill="none" stroke="{THEME["accent"]}" stroke-width="12" '
+        f'<circle cx="60" cy="60" r="50" fill="none" style="stroke:var(--fill)" stroke-width="12"></circle>'
+        f'<circle cx="60" cy="60" r="50" fill="none" style="stroke:var(--accent)" stroke-width="12" '
         f'stroke-dasharray="{dash:.0f} {circ:.0f}" transform="rotate(-90 60 60)"></circle>'
         f'<text x="60" y="56" text-anchor="middle" font-family="JetBrains Mono, monospace" '
-        f'font-size="26" font-weight="600" fill="{THEME["ink"]}">'
+        f'font-size="26" font-weight="600" style="fill:var(--ink)">'
         f"{load.cumulative_recovery_hours:g}</text>"
         f'<text x="60" y="74" text-anchor="middle" font-family="JetBrains Mono, monospace" '
-        f'font-size="10" letter-spacing="1" fill="{THEME["ink3"]}">HOURS</text></svg>'
+        f'font-size="10" letter-spacing="1" style="fill:var(--ink3)">HOURS</text></svg>'
     )
     chip = (
         f'<span class="chip" style="margin-left:auto">'
         f"{_e(load.recovery_status.replace('_', ' '))}</span>"
     )
     head_banner = (
-        f'<div class="pad bd" style="display:flex;align-items:center;gap:18px;background:{THEME["panel"]}">'
+        f'<div class="pad bd" style="display:flex;align-items:center;gap:18px;background:var(--panel)">'
         f"{gauge}<div>"
         f'<div class="lbl">recovery time</div>'
         f'<div class="big">{load.latest_workout_recovery_hours:g}<span class="m dim" style="font-size:16px;font-weight:400">'
@@ -717,25 +778,25 @@ def render_vo2_max_history(history: VO2MaxHistory) -> str:
             pts.append((x, y))
         polyline = " ".join(f"{x:.1f},{y:.1f}" for x, y in pts)
         dots = "".join(
-            f'<circle cx="{x:.1f}" cy="{y:.1f}" r="4" fill="{THEME["ink"]}" stroke="{THEME["paper"]}" stroke-width="2"/>'
+            f'<circle cx="{x:.1f}" cy="{y:.1f}" r="4" style="fill:var(--ink);stroke:var(--paper)" stroke-width="2"/>'
             for x, y in pts
         )
         chart = (
-            f'<div style="padding:14px;border-bottom:1px solid {THEME["hair"]}">'
+            f'<div style="padding:14px;border-bottom:1px solid var(--hair)">'
             f'<div class="lbl" style="margin-bottom:8px">trend ({len(series)} points)</div>'
             f'<svg viewBox="0 0 {w} {h}" style="width:100%%;height:auto;display:block" role="img" '
             f'aria-label="VO2Max trendline from {lo:g} to {hi:g}">'
-            f'<polyline points="{polyline}" fill="none" stroke="{THEME["accent"]}" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>'
+            f'<polyline points="{polyline}" fill="none" style="stroke:var(--accent)" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>'
             f"{dots}</svg></div>"
         )
     rows = (
         "".join(
             f'<tr><td class="m">{_e(_when(r.date))}</td><td class="s">{_e(r.sport)}</td>'
-            f'<td class="r m" style="font-weight:600;color:{THEME["accent"]}">{r.vo2_max}</td>'
+            f'<td class="r m" style="font-weight:600;color:var(--accent)">{r.vo2_max}</td>'
             f'<td class="r m dim">{_e(r.max_hr or "—")}</td></tr>'
             for r in history.records[:10]
         )
-        or f'<tr><td colspan="4" style="color:{THEME["ink3"]}">no VO2Max records</td></tr>'
+        or f'<tr><td colspan="4" style="color:var(--ink3)">no VO2Max records</td></tr>'
     )
     body = (
         '<div class="card">'
@@ -822,7 +883,7 @@ def render_recent_activities_summary(summary: RecentActivitiesSummary) -> str:
             f'<td class="r dim">{_e(a.last_performed)}</td></tr>'
             for a in summary.activities
         )
-        or f'<tr><td colspan="4" style="color:{THEME["ink3"]}">no sessions in range</td></tr>'
+        or f'<tr><td colspan="4" style="color:var(--ink3)">no sessions in range</td></tr>'
     )
     body = (
         '<div class="card">'
@@ -852,10 +913,27 @@ def render_recent_activities_summary(summary: RecentActivitiesSummary) -> str:
 # the server rendered into it. That keeps every renderer above in Python.
 CARD_META_KEY = "sport-tracker/card"
 
-_APP_SRC = (
-    "https://cdn.jsdelivr.net/npm/@modelcontextprotocol/ext-apps@2.0.0"
-    "/dist/src/app-with-deps.js"
-)
+def _load_ext_apps() -> str:
+    """The vendored ext-apps client, rewritten to publish a global.
+
+    The bundle ends in `export{...,OO as App}`. Inside an inline module script
+    those exports are unreachable — nothing can import an inline module — so the
+    trailing export becomes an assignment the next script block can read.
+    """
+    src = (Path(__file__).parent / "vendor" / "ext-apps-app-2.0.0.js").read_text(
+        encoding="utf-8"
+    )
+    match = re.search(r"export\{(?P<names>[^}]*)\};?\s*$", src)
+    if match is None:  # pragma: no cover - vendored file is pinned
+        raise RuntimeError("vendored ext-apps bundle has no trailing export")
+    pairs = []
+    for entry in match.group("names").split(","):
+        local, _, exported = entry.partition(" as ")
+        pairs.append(f"{(exported or local).strip()}:{local.strip()}")
+    return src[: match.start()] + "window.__extApps={" + ",".join(pairs) + "};"
+
+
+_VENDORED_APP = _load_ext_apps()
 
 _SHELL = """<!doctype html>
 <html lang="en">
@@ -864,18 +942,26 @@ _SHELL = """<!doctype html>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>%(title)s</title>
 <style>%(css)s
-#stt-wait{padding:16px;font:12px 'JetBrains Mono',ui-monospace,monospace;color:%(ink3)s}
+#stt-wait{padding:16px;font:12px 'JetBrains Mono',ui-monospace,monospace;color:%(ink3)s;white-space:pre-wrap}
 </style>
 </head>
 <body>
 <div class="wrap" id="stt-root"><div id="stt-wait">loading %(title)s&hellip;</div></div>
 <script type="module">
-import { App } from "%(app_src)s";
+// ext-apps client, vendored: an import from a CDN is at the mercy of the
+// widget's CSP, and when it is blocked the card silently never leaves
+// "loading…". Inlining removes the network from the path entirely.
+%(app_js)s
+//# sourceURL=ext-apps-app.js
+</script>
+<script type="module">
 const root = document.getElementById("stt-root");
+const wait = document.getElementById("stt-wait");
+const say = (m) => { if (wait) wait.textContent = m; };
+window.addEventListener("error", (e) => say("card error: " + (e.message || e.type)));
 function paint(result){
   const markup = result && result._meta && result._meta["%(meta_key)s"];
-  if (!markup) return;
-  // The server-rendered card is a whole document; take just its .wrap contents.
+  if (!markup) { say("tool result arrived without a card in _meta"); return; }
   const doc = new DOMParser().parseFromString(markup, "text/html");
   const wrap = doc.querySelector(".wrap");
   root.innerHTML = wrap ? wrap.innerHTML : doc.body.innerHTML;
@@ -885,9 +971,32 @@ function paint(result){
     old.replaceWith(s);
   }
 }
-const app = new App({ name: "sport-tracker", version: "1.0.0" });
-app.ontoolresult = paint;
-app.connect().catch(e => { root.textContent = "card bridge failed: " + e.message; });
+try {
+  const Ctor = window.__extApps && window.__extApps.App;
+  if (!Ctor) { say("ext-apps client did not load"); }
+  else {
+    const app = new Ctor({ name: "sport-tracker", version: "1.0.0" });
+    app.ontoolresult = paint;
+    // Follow the host's theme while the card is on "auto". A pinned light/dark
+    // choice sets data-theme on <html>, which this must not override.
+    const followHost = (t) => {
+      if (!t) return;
+      let pinned = null;
+      try { pinned = localStorage.getItem("stt-theme"); } catch (e) {}
+      if (pinned && pinned !== "auto") return;
+      document.documentElement.setAttribute("data-theme", t === "dark" ? "dark" : "light");
+    };
+    app.onhostcontextchanged = (ctx) => followHost(ctx && ctx.theme);
+    await app.connect();
+    followHost((app.getHostContext() || {}).theme);
+    say("connected — waiting for tool result…");
+    setTimeout(() => {
+      if (wait && wait.isConnected) say("connected, but no tool result after 10s");
+    }, 10000);
+  }
+} catch (e) {
+  say("card bridge failed: " + (e && e.message ? e.message : String(e)));
+}
 </script>
 </body>
 </html>"""
@@ -898,7 +1007,7 @@ def shell(title: str) -> str:
     return _SHELL % {
         "title": _e(title),
         "css": _CSS,
-        "ink3": THEME["ink3"],
-        "app_src": _APP_SRC,
+        "ink3": "var(--ink3)",
+        "app_js": _VENDORED_APP,
         "meta_key": CARD_META_KEY,
     }

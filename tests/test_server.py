@@ -53,17 +53,26 @@ async def test_server_tools_registered():
     assert social_tool.meta is None or "ui" not in (social_tool.meta or {})
 
 
-def test_card_routes_markup_to_meta_not_content():
-    """Three consumers, three channels — and the model never sees markup."""
-    result = _card("test_tool", "<h1>Test Card</h1>", {"status": "ok"})
+def test_card_routes_data_to_model_and_markup_to_widget():
+    """Three consumers, three channels.
 
-    # model: structured data plus a one-line pointer, never the markup
-    assert result.structured_content == {"status": "ok"}
+    The model MUST get the data in `content`: hosts that render a widget hand
+    the model the content blocks only, so data living solely in
+    structured_content leaves it unable to follow up (no workout_key to fetch
+    details with, no distances to compare).
+    """
+    result = _card("test_tool", "<h1>Test Card</h1>", {"status": "ok", "id": "abc123"})
     text = "".join(getattr(b, "text", "") for b in result.content)
-    assert "<h1>Test Card</h1>" not in text
-    assert text.startswith("Interactive card: file://")
 
-    # widget: the card rides on _meta, which is where the shell reads it
+    # model: the data itself, never the markup
+    assert "abc123" in text
+    assert "<h1>Test Card</h1>" not in text
+    assert "Interactive card: file://" in text
+
+    # typed copy for hosts that read it
+    assert result.structured_content == {"status": "ok", "id": "abc123"}
+
+    # widget: the card rides on _meta, where the shell reads it
     assert result.meta[ui.CARD_META_KEY] == "<h1>Test Card</h1>"
 
     # browser fallback: same markup on disk

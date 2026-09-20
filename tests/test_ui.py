@@ -180,3 +180,60 @@ def test_recent_workouts_limit_selector_states():
     html_5 = ui.render_recent_workouts(_summaries(), limit=5)
     assert 'data-limit="5" aria-pressed="true"' in html_5
     assert 'data-limit="10" aria-pressed="false"' in html_5
+
+
+def test_both_themes_are_defined_as_tokens():
+    """Every colour is a token, defined for light and dark in the same shape.
+
+    A colour whose only definition sits inside a media/[data-theme] block never
+    applies in the un-stamped state, which renders one theme's text on the
+    other theme's ground.
+    """
+    css = ui._CSS
+    for key in ui.THEME:
+        assert f"--{key}:" in css, f"{key} missing from :root"
+        assert ui.THEME[key] in css, f"light {key} missing"
+        assert ui.DARK[key] in css, f"dark {key} missing"
+    # All three states: bare :root, OS preference, explicit toggle.
+    assert ":root{" in css
+    assert '@media (prefers-color-scheme:dark){:root:not([data-theme="light"])' in css
+    assert ':root[data-theme="dark"]' in css
+
+
+def test_no_hardcoded_palette_colours_in_markup():
+    """Cards reference tokens, never raw hex, or the toggle cannot recolour them."""
+    detail = WorkoutDetail.from_api(MOCK_WORKOUT_DETAILS_PAYLOAD)
+    assert detail is not None
+    cards = [
+        ui.render_recent_workouts(_summaries()),
+        ui.render_workout_details(detail),
+        ui.render_training_load_and_recovery(
+            TrainingLoadAndRecovery.from_workout(MOCK_WORKOUTS_PAYLOAD[0])
+        ),
+        ui.render_user_stats(UserStats.from_api(MOCK_USER_STATS_PAYLOAD)),
+    ]
+    for card in cards:
+        body = card.split("</style>")[1]
+        for key, value in ui.THEME.items():
+            assert value not in body, f"raw {key} ({value}) in markup; use var(--{key})"
+
+
+def test_every_card_offers_the_theme_toggle():
+    detail = WorkoutDetail.from_api(MOCK_WORKOUT_DETAILS_PAYLOAD)
+    assert detail is not None
+    cards = [
+        ui.render_recent_workouts(_summaries()),
+        ui.render_workout_details(detail),
+        ui.render_training_summary(TrainingSummary.from_workouts(MOCK_WORKOUTS_PAYLOAD)),
+        ui.render_vo2_max_history(VO2MaxHistory.from_workouts(MOCK_WORKOUTS_PAYLOAD)),
+        ui.render_user_stats(UserStats.from_api(MOCK_USER_STATS_PAYLOAD)),
+        ui.render_recent_activities_summary(
+            RecentActivitiesSummary.from_workouts(MOCK_WORKOUTS_PAYLOAD)
+        ),
+        ui.render_training_load_and_recovery(
+            TrainingLoadAndRecovery.from_workout(MOCK_WORKOUTS_PAYLOAD[0])
+        ),
+    ]
+    for card in cards:
+        for choice in ("light", "dark", "auto"):
+            assert f'data-theme-set="{choice}"' in card
